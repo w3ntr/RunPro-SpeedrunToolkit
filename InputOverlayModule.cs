@@ -1,4 +1,4 @@
-﻿using MelonLoader;
+using MelonLoader;
 using System;
 using UnityEngine;
 
@@ -71,7 +71,8 @@ namespace SpeedrunToolkitMod
 
         private void InitTextures()
         {
-            if (texturesInitialized) return;
+            // Если текстуры удалились из памяти Unity, создаем их заново
+            if (texturesInitialized && normalTex != null && activeTex != null) return;
 
             if (normalTex != null) UnityEngine.Object.Destroy(normalTex);
             if (activeTex != null) UnityEngine.Object.Destroy(activeTex);
