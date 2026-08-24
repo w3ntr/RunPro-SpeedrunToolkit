@@ -8,12 +8,13 @@ namespace SpeedrunToolkitMod
         public bool IsEnabled = true;
         public bool ShowSpeed = true;
         public bool ShowCoords = true;
+        public bool ShowAngles = true; // Поле для отображения углов обзора
         public bool HideNativeSpeedo = true;
 
         public float HudX = 20f;
         public float HudY = 60f;
         public int FontSize = 14;
-        public FontStyle FontStyle = FontStyle.Bold; // Исправлено название
+        public FontStyle FontStyle = FontStyle.Bold;
         public int ColorIndex = 0;
         public float BgOpacity = 0.6f;
 
@@ -23,7 +24,6 @@ namespace SpeedrunToolkitMod
         private Texture2D bgTexture;
         private List<GameObject> disabledNativeObjects = new List<GameObject>();
 
-        // Сделано static, чтобы Main.cs мог обращаться к ним напрямую
         public static readonly string[] ColorNames = { "Cyan", "White", "Yellow", "Lime", "Orange", "Pink", "Red" };
         public static readonly Color[] Colors = {
             new Color(0f, 0.9f, 1f),
@@ -86,7 +86,6 @@ namespace SpeedrunToolkitMod
             }
         }
 
-        // Переименовано в Update(), как ожидает Main.cs
         public void Update()
         {
             if (HideNativeSpeedo && Time.frameCount % 180 == 0)
@@ -141,11 +140,12 @@ namespace SpeedrunToolkitMod
             int lines = 0;
             if (ShowSpeed) lines++;
             if (ShowCoords) lines++;
+            if (ShowAngles) lines++;
             if (lines == 0) return;
 
             float lineHeight = FontSize + 8f;
             float width = FontSize * 16f;
-            if (width < 220f) width = 220f;
+            if (width < 240f) width = 240f;
             float height = lines * lineHeight + 12f;
 
             GUI.DrawTexture(new Rect(HudX, HudY, width, height), bgTexture);
@@ -172,6 +172,21 @@ namespace SpeedrunToolkitMod
                 Vector3 pos = playerObj.transform.position;
                 GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "Pos:", labelStyle);
                 GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.7f, lineHeight), $"X:{pos.x:F1}  Y:{pos.y:F1}  Z:{pos.z:F1}", valStyle);
+                currentY += lineHeight;
+            }
+
+            if (ShowAngles)
+            {
+                Camera cam = Camera.main;
+                if (cam != null)
+                {
+                    Vector3 rot = cam.transform.eulerAngles;
+                    float pitch = rot.x > 180f ? rot.x - 360f : rot.x;
+                    float yaw = rot.y;
+
+                    GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "Look:", labelStyle);
+                    GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.75f, lineHeight), $"P:{pitch:F2}°  Y:{yaw:F2}°", valStyle);
+                }
             }
         }
     }
