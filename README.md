@@ -44,6 +44,8 @@
 * **Dedicated Keybind**: Toggled independently using **F7** by default (fully rebindable).
 * **Auto-Scanning**: Scans `.wav` files located in `UserData/CustomMusic` and automatically generates a playable track list.
 
+### And some new mods!
+
 ---
 
 ## 🕹️ Default Keybindings
