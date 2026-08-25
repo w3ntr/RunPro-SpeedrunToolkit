@@ -67,7 +67,7 @@
 
 ![Info](info.png)
 ![Practice Tab Menu](screenshot_practice.png)
-![Practice Tab Menu](screenshot_showcasepracticemode.png)
+![Practice Tab Menu](practice.png)
 *Main settings interface and keybindings configuration*
 
 ![HUD Customization](screenshot7.png)
