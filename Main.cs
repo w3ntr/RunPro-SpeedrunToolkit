@@ -1,7 +1,7 @@
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.0.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.1.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -221,6 +221,7 @@ namespace SpeedrunToolkitMod
                 }
 
                 movementModule.Update();
+                TrajectoryModule.Update();
             }
         }
 
@@ -274,7 +275,7 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.0.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.1.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
@@ -518,6 +519,7 @@ namespace SpeedrunToolkitMod
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
             }
+
         }
 
         private void DrawRebindButton(float x, ref float y, float width, string label, KeyCode currentKey, int rebindIndex)

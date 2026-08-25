@@ -1,6 +1,5 @@
 ﻿using HarmonyLib;
 using Il2Cpp;
-using System.Reflection;
 using UnityEngine;
 
 namespace SpeedrunToolkitMod
@@ -10,33 +9,34 @@ namespace SpeedrunToolkitMod
         public static bool EnableJumperFix = true;
         public static bool EnableBoosterFix = true;
 
-        public static float JumperForceMultiplier = 1.01f;
+        // --- ОБНОВЛЁННЫЕ ЛИМИТЫ (v5.0.1) ---
+        public static float JumperForceMultiplier = 1.025f; // Значение по умолчанию
         public static float BoosterForceMultiplier = 1.00f;
 
-        // Разрешенный диапазон честной игры (от 1.00x до 1.02x включительно)
         public const float MinSafeLimit = 1.00f;
-        public const float MaxSafeLimit = 1.01f;
+        public const float MaxSafeLimit = 1.025f; // Повысили безопасный лимит!
 
         public void DrawUI(float x, float y, float contentWidth)
         {
             GUI.Label(new Rect(x, y, contentWidth, 20), "<b>Physics Fixes & QoL</b>");
             y += 24f;
 
-            // --- ФИКС ДЖАМПЕРОВ ---
+            // --- JUMPERS ---
             EnableJumperFix = GUI.Toggle(new Rect(x, y, contentWidth, 20), EnableJumperFix, " Fix Jumper Height (Deterministic Jumpbox)");
             y += 22f;
 
             if (EnableJumperFix)
             {
-                GUI.Label(new Rect(x + 15f, y, contentWidth - 15f, 20), $"Jump Height Multiplier: <b>{JumperForceMultiplier:F2}x</b>");
+                GUI.Label(new Rect(x + 15f, y, contentWidth - 15f, 20), $"Jump Height Multiplier: <b>{JumperForceMultiplier:F3}x</b>"); // F3 для 1.025
                 y += 18f;
 
                 float prevJumper = JumperForceMultiplier;
-                JumperForceMultiplier = GUI.HorizontalSlider(new Rect(x + 15f, y, contentWidth - 115f, 15), JumperForceMultiplier, 0.5f, 2.0f);
+                JumperForceMultiplier = GUI.HorizontalSlider(new Rect(x + 15f, y, contentWidth - 125f, 15), JumperForceMultiplier, 0.5f, 2.0f);
 
-                if (GUI.Button(new Rect(x + contentWidth - 95f, y - 2f, 95f, 20f), "Reset (1.01x)"))
+                // Кнопка сброса на новый лимит
+                if (GUI.Button(new Rect(x + contentWidth - 105f, y - 2f, 105f, 20f), "Reset (1.025x)"))
                 {
-                    JumperForceMultiplier = 1.01f;
+                    JumperForceMultiplier = 1.025f;
                 }
 
                 if (Mathf.Abs(prevJumper - JumperForceMultiplier) > 0.001f)
@@ -47,7 +47,7 @@ namespace SpeedrunToolkitMod
                 y += 25f;
             }
 
-            // --- ФИКС БУСТЕРОВ ---
+            // --- BOOSTERS ---
             EnableBoosterFix = GUI.Toggle(new Rect(x, y, contentWidth, 20), EnableBoosterFix, " Fix Booster Momentum (Deterministic Booster)");
             y += 22f;
 
@@ -71,11 +71,37 @@ namespace SpeedrunToolkitMod
 
                 y += 25f;
             }
+            // --- VISUAL HELPERS ---
+            y += 10f;
+            GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>Visual Helpers</b>");
+            y += 22f;
+
+            // 1. Траектория
+            TrajectoryModule.EnableTrajectory = GUI.Toggle(
+                new Rect(x, y, contentWidth, 20f),
+                TrajectoryModule.EnableTrajectory,
+                " Show Jump Trajectory Line"
+            );
+            y += 22f;
+
+            // 2. Триггеры (с ручным Rect вместо GUILayout)
+            bool newTriggerState = GUI.Toggle(
+                new Rect(x, y, contentWidth, 20f),
+                TriggerVisualizer.EnableTriggers,
+                " Show Interactive Triggers (Jumper / Booster / Finish)"
+            );
+
+            if (newTriggerState != TriggerVisualizer.EnableTriggers)
+            {
+                TriggerVisualizer.EnableTriggers = newTriggerState;
+            }
+            y += 25f;
         }
 
-        // Выход за пределы 1.00x - 1.02x скрывает финиш
+        // --- ЛОГИКА ANTI-CHEAT (СКРЫТИЕ ФИНИША) ---
         public static void CheckFinishAbuse()
         {
+            // Проверка по новому лимиту 1.025f
             bool isJumperAbused = EnableJumperFix && (JumperForceMultiplier < MinSafeLimit || JumperForceMultiplier > MaxSafeLimit);
             bool isBoosterAbused = EnableBoosterFix && (BoosterForceMultiplier < MinSafeLimit || BoosterForceMultiplier > MaxSafeLimit);
 
@@ -90,35 +116,6 @@ namespace SpeedrunToolkitMod
                     go.SetActive(!isAbused);
                 }
             }
-        }
-
-        // Универсальное получение силы бустера через рефлексию
-        public static float GetBoosterForce(Booster booster)
-        {
-            if (booster == null) return 0f;
-            var type = booster.GetType();
-
-            string[] possibleNames = new string[] { "boostForce", "force", "speed", "boostSpeed", "boost", "power" };
-            foreach (var name in possibleNames)
-            {
-                var field = type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (field != null && field.FieldType == typeof(float))
-                {
-                    return (float)field.GetValue(booster);
-                }
-            }
-
-            // Фоллбэк: берем первое числовое float-поле класса Booster
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var f in fields)
-            {
-                if (f.FieldType == typeof(float))
-                {
-                    return (float)f.GetValue(booster);
-                }
-            }
-
-            return 10f;
         }
     }
 
@@ -150,6 +147,7 @@ namespace SpeedrunToolkitMod
                     rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
                 }
 
+                // Используем новый лимит 1.025
                 fps.JumpboxJump(__instance.jumpForce * FixesModule.JumperForceMultiplier);
             }
 
@@ -175,14 +173,12 @@ namespace SpeedrunToolkitMod
                 AudioSystem audio = Object.FindObjectOfType<AudioSystem>();
                 if (audio != null) audio.Play("booster");
 
-                // Сбрасываем старую инерцию
                 Rigidbody rb = other.GetComponent<Rigidbody>();
                 if (rb != null)
                 {
                     rb.velocity = Vector3.zero;
                 }
 
-                // Передаем параметры ускорения с учетом множителя и затем вызываем ApplyFakeForce()
                 fakeForce.SetFakeForce(
                     __instance.forwardForce * FixesModule.BoosterForceMultiplier,
                     __instance.jumpForce * FixesModule.BoosterForceMultiplier,
