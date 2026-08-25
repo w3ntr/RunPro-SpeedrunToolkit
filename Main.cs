@@ -1,7 +1,7 @@
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "4.5.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.0.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -19,7 +19,7 @@ namespace SpeedrunToolkitMod
         private FreecamModule freecamModule;
         public static SlomoModule Slomo = new SlomoModule();
         private CrosshairModule crosshairModule = new CrosshairModule();
-
+        public FixesModule fixesModule = new FixesModule();
         private bool showMenu = false;
         private int selectedTab = 0;
 
@@ -274,13 +274,14 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v4.5.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.0.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
             float contentWidth = menuWidth - 30f;
 
-            string[] tabNames = new string[] { "Practice", "HUD", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Slomo", "Info" };
+            // Добавлена вкладка "Fixes" (всего 11 вкладок)
+            string[] tabNames = new string[] { "Practice", "HUD", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Fixes", "Slomo", "Info" };
             int tabsPerRow = 5;
             float tabGap = 3f;
             float tabWidth = (contentWidth - (tabGap * (tabsPerRow - 1))) / tabsPerRow;
@@ -300,7 +301,9 @@ namespace SpeedrunToolkitMod
                 }
             }
 
-            y += (tabHeight + 3f) * 2f + 12f;
+            // Автоматический расчет высоты для любого количества рядов кнопок
+            int totalRows = (tabNames.Length + tabsPerRow - 1) / tabsPerRow;
+            y += (tabHeight + 3f) * totalRows + 12f;
 
             if (selectedTab == 0 && practiceModule != null)
             {
@@ -459,7 +462,11 @@ namespace SpeedrunToolkitMod
             {
                 y = movementModule.DrawUI(x, y, contentWidth);
             }
-            else if (selectedTab == 8 && Slomo != null)
+            else if (selectedTab == 8 && fixesModule != null)
+            {
+                fixesModule.DrawUI(x, y, contentWidth);
+            }
+            else if (selectedTab == 9 && Slomo != null)
             {
                 GUI.Label(new Rect(x, y, contentWidth, 20), $"<b>Game Speed: {Slomo.CurrentScale:F1}x</b>");
                 y += 22;
@@ -484,22 +491,23 @@ namespace SpeedrunToolkitMod
                     " • <b>Numpad 0</b> : Сбросить скорость на 1.0x"
                 );
             }
-            else if (selectedTab == 9)
+            else if (selectedTab == 10)
             {
                 GUI.Label(new Rect(x, y, contentWidth, 20), "<b>📖 Hotkeys & Information</b>");
                 y += 22;
 
                 string infoText =
-                    $"• <b>{menuKey}</b> — Открыть/Закрыть Меню Настроек\n" +
-                    $"• <b>{savePosKey}</b> / <b>{loadPosKey}</b> — Сохранить / Загрузить Активный Слот\n" +
-                    $"• <b>{prevSlotKey}</b> / <b>{nextSlotKey}</b> — Переключить Слот (1–5)\n" +
-                    $"• <b>{spawnPosKey}</b> — Вернуться на Старт Карты\n" +
-                    $"• <b>{restartKey}</b> — Сбросить Активный Слот\n" +
-                    "• <b>F3</b> — Freecam (Свободная камера)\n" +
-                    "• <b>[ / ]</b> — Замедление времени\n" +
-                    "• <b>Numpad 0</b> — Сброс скорости времени";
+                    $"• <b>{menuKey}</b> — Toggle Settings Menu\n" +
+                    $"• <b>{savePosKey}</b> / <b>{loadPosKey}</b> — Save / Load Active Checkpoint\n" +
+                    $"• <b>{prevSlotKey}</b> / <b>{nextSlotKey}</b> — Switch Active Slot (1–5)\n" +
+                    $"• <b>{spawnPosKey}</b> — Teleport to Level Start\n" +
+                    $"• <b>{restartKey}</b> — Reset Current Slot\n" +
+                    "• <b>F3</b> — Toggle Freecam Mode\n" +
+                    "• <b>[ / ]</b> or <b>Numpad - / +</b> — Adjust Game Speed\n" +
+                    "• <b>Numpad 0</b> — Reset Speed to 1.0x\n\n" +
+                    "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.02x in Fixes tab disables the finish trigger to keep leaderboards fair.";
 
-                GUI.Label(new Rect(x, y, contentWidth, 260), infoText);
+                GUI.Label(new Rect(x, y, contentWidth, 280), infoText);
             }
 
             y = menuRect.y + menuHeight - 35f;
