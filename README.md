@@ -65,6 +65,7 @@
 
 ## 📸 Screenshots
 
+![Info](info.png)
 ![Practice Tab Menu](screenshot_practice.png)
 ![Practice Tab Menu](screenshot_showcasepracticemode.png)
 *Main settings interface and keybindings configuration*
