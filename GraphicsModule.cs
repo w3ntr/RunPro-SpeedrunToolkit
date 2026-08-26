@@ -1,6 +1,10 @@
-using MelonLoader;
+﻿using MelonLoader;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.PostProcessing;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 
 namespace SpeedrunToolkitMod
 {
@@ -10,9 +14,26 @@ namespace SpeedrunToolkitMod
         public bool DisableShadows = false;
         public bool HideHands = false;
         public bool HideGameHUD = false;
-        public int TextureQuality = 0; // 0 = High, 1 = Medium, 2 = Low (Potato)
+        public int TextureQuality = 0; // 0 = High, 1 = Medium, 2 = Low
 
-        // Настройки дальности
+        // Dark Mode
+        public bool EnableDarkMode = false;
+        private Color defaultAmbientLight = Color.white;
+        private AmbientMode defaultAmbientMode = AmbientMode.Skybox;
+        private float defaultAmbientIntensity = 1f;
+        private bool hasCapturedAmbient = false;
+
+        // Skybox Management
+        private Material originalSkyboxMaterial;
+        private List<string> availableSkyboxNames = new List<string>();
+
+        // Custom Skyboxes Folder & Cache
+        private List<string> customImageFiles = new List<string>();
+        private Dictionary<string, Material> customMaterialsCache = new Dictionary<string, Material>();
+
+        public int CurrentSkyboxIndex = 0;
+
+        // Distance Settings
         public bool EnableCustomRenderDistance = false;
         public float RenderDistance = 1000f;
         public bool EnableCustomShadowDistance = false;
@@ -22,12 +43,16 @@ namespace SpeedrunToolkitMod
         private float defaultShadowDist = 150f;
         private bool hasDefaults = false;
 
+        // Для отслеживания смены камеры и предотвращения вспышек
+        private Camera lastCamera = null;
+
         private MelonPreferences_Category configCategory;
         private MelonPreferences_Entry<bool> configDisablePP;
         private MelonPreferences_Entry<bool> configDisableShadows;
         private MelonPreferences_Entry<bool> configHideHands;
         private MelonPreferences_Entry<bool> configHideGameHUD;
         private MelonPreferences_Entry<int> configTextureQuality;
+        private MelonPreferences_Entry<bool> configDarkMode;
 
         private MelonPreferences_Entry<bool> configEnableCustomRenderDistance;
         private MelonPreferences_Entry<float> configRenderDistance;
@@ -42,6 +67,7 @@ namespace SpeedrunToolkitMod
             configHideHands = configCategory.CreateEntry("HideHands", false, "Hide First Person Hands");
             configHideGameHUD = configCategory.CreateEntry("HideGameHUD", false, "Hide Native Game HUD");
             configTextureQuality = configCategory.CreateEntry("TextureQuality", 0, "Texture Quality Limit");
+            configDarkMode = configCategory.CreateEntry("DarkMode", false, "Enable Dark Mode");
 
             configEnableCustomRenderDistance = configCategory.CreateEntry("EnableCustomRenderDistance", false, "Enable Custom Render Distance");
             configRenderDistance = configCategory.CreateEntry("RenderDistance", 1000f, "Render Distance");
@@ -53,13 +79,143 @@ namespace SpeedrunToolkitMod
             HideHands = configHideHands.Value;
             HideGameHUD = configHideGameHUD.Value;
             TextureQuality = Mathf.Clamp(configTextureQuality.Value, 0, 2);
+            EnableDarkMode = configDarkMode.Value;
 
             EnableCustomRenderDistance = configEnableCustomRenderDistance.Value;
             RenderDistance = configRenderDistance.Value;
             EnableCustomShadowDistance = configEnableCustomShadowDistance.Value;
             ShadowDistance = configShadowDistance.Value;
 
+            EnsureCustomFolderExists();
+            ScanCustomSkyboxes();
+
             MelonLogger.Msg("[Graphics] Module initialized.");
+        }
+
+        private void EnsureCustomFolderExists()
+        {
+            string folder = GetCustomSkyboxFolderPath();
+            if (!Directory.Exists(folder))
+            {
+                Directory.CreateDirectory(folder);
+                MelonLogger.Msg($"[Graphics] Created custom skybox folder: {folder}");
+            }
+        }
+
+        private string GetCustomSkyboxFolderPath()
+        {
+            return Path.Combine(Application.dataPath, "../UserData/Skyboxes");
+        }
+
+        public void ScanCustomSkyboxes()
+        {
+            customImageFiles.Clear();
+            string folder = GetCustomSkyboxFolderPath();
+            if (Directory.Exists(folder))
+            {
+                var files = Directory.GetFiles(folder, "*.*")
+                    .Where(f => f.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".jpg", System.StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".jpeg", System.StringComparison.OrdinalIgnoreCase));
+
+                customImageFiles.AddRange(files);
+                MelonLogger.Msg($"[Graphics] Found {customImageFiles.Count} custom skybox image(s).");
+            }
+        }
+
+        private void EnsureSkyboxNamesLoaded()
+        {
+            if (availableSkyboxNames.Count == 0)
+            {
+                var materials = Resources.LoadAll<Material>("Skyboxes");
+                if (materials != null && materials.Length > 0)
+                {
+                    foreach (var mat in materials)
+                    {
+                        if (mat != null && !string.IsNullOrEmpty(mat.name))
+                        {
+                            if (!availableSkyboxNames.Contains(mat.name))
+                            {
+                                availableSkyboxNames.Add(mat.name);
+                            }
+                        }
+                    }
+                    MelonLogger.Msg($"[Graphics] Loaded {availableSkyboxNames.Count} native skybox names!");
+                }
+            }
+        }
+
+        private Material GetOrCreateCustomMaterial(string filePath)
+        {
+            if (customMaterialsCache.ContainsKey(filePath) && customMaterialsCache[filePath] != null)
+            {
+                return customMaterialsCache[filePath];
+            }
+
+            try
+            {
+                byte[] bytes = File.ReadAllBytes(filePath);
+                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+                tex.LoadImage(bytes);
+                tex.wrapMode = TextureWrapMode.Clamp;
+
+                Shader targetShader = null;
+
+                var allShaders = Resources.FindObjectsOfTypeAll<Shader>();
+                foreach (var s in allShaders)
+                {
+                    if (s != null && (s.name.Contains("Panoramic") || s.name.Contains("Equirect") || s.name.Contains("Sphere")))
+                    {
+                        targetShader = s;
+                        break;
+                    }
+                }
+
+                if (targetShader == null) targetShader = Shader.Find("Skybox/Panoramic");
+
+                bool is6Sided = false;
+                if (targetShader == null)
+                {
+                    targetShader = Shader.Find("Skybox/6 Sided");
+                    is6Sided = true;
+                }
+
+                if (targetShader == null && originalSkyboxMaterial != null)
+                {
+                    targetShader = originalSkyboxMaterial.shader;
+                }
+
+                if (targetShader != null)
+                {
+                    Material mat = new Material(targetShader);
+
+                    if (is6Sided)
+                    {
+                        mat.SetTexture("_FrontTex", tex);
+                        mat.SetTexture("_BackTex", tex);
+                        mat.SetTexture("_LeftTex", tex);
+                        mat.SetTexture("_RightTex", tex);
+                        mat.SetTexture("_UpTex", tex);
+                        mat.SetTexture("_DownTex", tex);
+                    }
+                    else
+                    {
+                        if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", tex);
+                        if (mat.HasProperty("_Tex")) mat.SetTexture("_Tex", tex);
+                        if (mat.HasProperty("_FrontTex")) mat.SetTexture("_FrontTex", tex);
+                    }
+
+                    customMaterialsCache[filePath] = mat;
+                    MelonLogger.Msg($"[Graphics] Applied custom skybox with shader: {targetShader.name}");
+                    return mat;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                MelonLogger.Error($"Failed to load custom skybox ({Path.GetFileName(filePath)}): {ex.Message}");
+            }
+
+            return null;
         }
 
         public void ApplyGraphicsSettings()
@@ -74,14 +230,12 @@ namespace SpeedrunToolkitMod
                     hasDefaults = true;
                 }
 
-                // 1. Пост-обработка (Bloom, Motion Effects)
                 var ppLayer = mainCam.GetComponent<PostProcessLayer>();
                 if (ppLayer != null)
                 {
                     ppLayer.enabled = !DisablePostProcessing;
                 }
 
-                // 2. Custom Draw Distance
                 if (EnableCustomRenderDistance)
                 {
                     mainCam.farClipPlane = RenderDistance;
@@ -92,21 +246,144 @@ namespace SpeedrunToolkitMod
                 }
             }
 
-            // 3. Shadows
             QualitySettings.shadows = DisableShadows ? ShadowQuality.Disable : ShadowQuality.All;
 
-            // 4. Custom Shadow Distance
             if (EnableCustomShadowDistance)
             {
                 QualitySettings.shadowDistance = ShadowDistance;
             }
 
-            // 5. Quality
             QualitySettings.masterTextureLimit = TextureQuality;
 
-            // 6. HideGameHUD and Hands
+            ApplySkyboxLogic();
+            ApplyDarkModeLogic();
             ApplyHandsSettings();
             ApplyGameHUDSettings();
+        }
+
+        private void ApplySkyboxLogic()
+        {
+            if (CurrentSkyboxIndex == 0 && RenderSettings.skybox != null && !customMaterialsCache.ContainsValue(RenderSettings.skybox))
+            {
+                originalSkyboxMaterial = RenderSettings.skybox;
+            }
+
+            EnsureSkyboxNamesLoaded();
+            Camera mainCam = Camera.main;
+
+            int nativeCount = availableSkyboxNames.Count;
+            int idxBlack = nativeCount + 1;
+
+            if (CurrentSkyboxIndex == 0) // Map Default
+            {
+                if (mainCam != null) mainCam.clearFlags = CameraClearFlags.Skybox;
+                if (originalSkyboxMaterial != null) RenderSettings.skybox = originalSkyboxMaterial;
+            }
+            else if (CurrentSkyboxIndex >= 1 && CurrentSkyboxIndex <= nativeCount) // Native
+            {
+                if (mainCam != null) mainCam.clearFlags = CameraClearFlags.Skybox;
+                string skyName = availableSkyboxNames[CurrentSkyboxIndex - 1];
+                Material loadedMat = Resources.Load<Material>("Skyboxes/" + skyName);
+                if (loadedMat != null) RenderSettings.skybox = loadedMat;
+            }
+            else if (CurrentSkyboxIndex == idxBlack) // Solid Black
+            {
+                if (mainCam != null)
+                {
+                    mainCam.clearFlags = CameraClearFlags.SolidColor;
+                    mainCam.backgroundColor = Color.black;
+                }
+                RenderSettings.skybox = null;
+            }
+            else // Custom Images
+            {
+                int customIdx = CurrentSkyboxIndex - (idxBlack + 1);
+                if (customIdx >= 0 && customIdx < customImageFiles.Count)
+                {
+                    if (mainCam != null) mainCam.clearFlags = CameraClearFlags.Skybox;
+                    Material customMat = GetOrCreateCustomMaterial(customImageFiles[customIdx]);
+                    if (customMat != null) RenderSettings.skybox = customMat;
+                }
+            }
+
+            DynamicGI.UpdateEnvironment();
+        }
+
+        private void ApplyDarkModeLogic()
+        {
+            Color darkColor = new Color(0.04f, 0.04f, 0.07f);
+
+            if (EnableDarkMode)
+            {
+                if (!hasCapturedAmbient && RenderSettings.ambientLight != darkColor)
+                {
+                    defaultAmbientLight = RenderSettings.ambientLight;
+                    defaultAmbientMode = RenderSettings.ambientMode;
+                    defaultAmbientIntensity = RenderSettings.ambientIntensity;
+                    hasCapturedAmbient = true;
+                }
+
+                RenderSettings.ambientMode = AmbientMode.Flat;
+                RenderSettings.ambientLight = darkColor;
+            }
+            else
+            {
+                if (hasCapturedAmbient)
+                {
+                    RenderSettings.ambientMode = defaultAmbientMode;
+                    RenderSettings.ambientLight = defaultAmbientLight;
+                    RenderSettings.ambientIntensity = defaultAmbientIntensity;
+                    hasCapturedAmbient = false;
+                }
+            }
+
+            DynamicGI.UpdateEnvironment();
+        }
+
+        // Вызывается каждый кадр из Main.cs для перехвата момента смены сцены / рестарта
+        public void OnUpdate()
+        {
+            Camera mainCam = Camera.main;
+
+            // Если камера поменялась (или только что появилась при загрузке уровня)
+            if (mainCam != lastCamera)
+            {
+                lastCamera = mainCam;
+                if (mainCam != null)
+                {
+                    ApplyGraphicsSettings();
+                }
+            }
+
+            // Жестко страхуем цвета фона каждый кадр, чтобы предотвратить дефолтные вспышки
+            if (mainCam != null)
+            {
+                EnsureSkyboxNamesLoaded();
+                int nativeCount = availableSkyboxNames.Count;
+                int idxBlack = nativeCount + 1;
+
+                if (CurrentSkyboxIndex == idxBlack)
+                {
+                    mainCam.clearFlags = CameraClearFlags.SolidColor;
+                    mainCam.backgroundColor = Color.black;
+                }
+            }
+        }
+
+        public void NextSkybox()
+        {
+            EnsureSkyboxNamesLoaded();
+            int total = availableSkyboxNames.Count + 1 + 1 + customImageFiles.Count;
+            CurrentSkyboxIndex = (CurrentSkyboxIndex + 1) % total;
+            ApplyGraphicsSettings();
+        }
+
+        public void PreviousSkybox()
+        {
+            EnsureSkyboxNamesLoaded();
+            int total = availableSkyboxNames.Count + 1 + 1 + customImageFiles.Count;
+            CurrentSkyboxIndex = (CurrentSkyboxIndex - 1 + total) % total;
+            ApplyGraphicsSettings();
         }
 
         public void ApplyHandsSettings()
@@ -143,6 +420,61 @@ namespace SpeedrunToolkitMod
 
             GUI.Label(new Rect(startX, y, width, 20), "<b>Graphics & View Settings</b>");
             y += 24f;
+
+            // Dark Mode
+            bool newDarkMode = GUI.Toggle(new Rect(startX, y, width, 20), EnableDarkMode, " Enable Dark Mode");
+            if (newDarkMode != EnableDarkMode)
+            {
+                EnableDarkMode = newDarkMode;
+                configDarkMode.Value = EnableDarkMode;
+                configCategory.SaveToFile();
+                ApplyGraphicsSettings();
+            }
+            y += 22f;
+
+            // Skybox Selector Controls
+            EnsureSkyboxNamesLoaded();
+            string skyName = "Map Default";
+            int nativeCount = availableSkyboxNames.Count;
+            int idxBlack = nativeCount + 1;
+
+            if (CurrentSkyboxIndex > 0 && CurrentSkyboxIndex <= nativeCount)
+            {
+                skyName = $"[{CurrentSkyboxIndex}] {availableSkyboxNames[CurrentSkyboxIndex - 1]}";
+            }
+            else if (CurrentSkyboxIndex == idxBlack)
+            {
+                skyName = $"⬛ Solid Black";
+            }
+            else if (CurrentSkyboxIndex > idxBlack)
+            {
+                int customIdx = CurrentSkyboxIndex - (idxBlack + 1);
+                if (customIdx < customImageFiles.Count)
+                {
+                    string fileName = Path.GetFileName(customImageFiles[customIdx]);
+                    skyName = $"🖼️ [{customIdx + 1}/{customImageFiles.Count}] {fileName}";
+                }
+            }
+
+            GUI.Label(new Rect(startX, y, width, 18), $"Skybox: <b>{skyName}</b>");
+            y += 20f;
+
+            float btnWidth = (width - 10f) / 2f;
+            if (GUI.Button(new Rect(startX, y, btnWidth, 22), "◄ Previous Sky"))
+            {
+                PreviousSkybox();
+            }
+            if (GUI.Button(new Rect(startX + btnWidth + 10f, y, btnWidth, 22), "Next Sky ►"))
+            {
+                NextSkybox();
+            }
+            y += 26f;
+
+            if (GUI.Button(new Rect(startX, y, width, 22), "📁 Rescan Custom Skyboxes Folder"))
+            {
+                ScanCustomSkyboxes();
+            }
+            y += 26f;
 
             // Post-Processing
             bool newPP = GUI.Toggle(new Rect(startX, y, width, 20), DisablePostProcessing, " Disable Post-Processing (Bloom, FX)");
@@ -186,7 +518,6 @@ namespace SpeedrunToolkitMod
                 {
                     RenderDistance = newDist;
                     configRenderDistance.Value = RenderDistance;
-                    configCategory.SaveToFile();
                     ApplyGraphicsSettings();
                 }
                 y += 20f;
@@ -212,7 +543,6 @@ namespace SpeedrunToolkitMod
                 {
                     ShadowDistance = newShadow;
                     configShadowDistance.Value = ShadowDistance;
-                    configCategory.SaveToFile();
                     ApplyGraphicsSettings();
                 }
                 y += 20f;

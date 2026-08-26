@@ -1,4 +1,4 @@
-using MelonLoader;
+﻿using MelonLoader;
 using MelonLoader.Utils;
 using System.Collections.Generic;
 using System.IO;

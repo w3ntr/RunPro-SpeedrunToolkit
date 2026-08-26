@@ -9,12 +9,19 @@ namespace SpeedrunToolkitMod
         public static bool EnableJumperFix = true;
         public static bool EnableBoosterFix = true;
 
-        // --- ОБНОВЛЁННЫЕ ЛИМИТЫ (v5.0.1) ---
-        public static float JumperForceMultiplier = 1.025f; // Значение по умолчанию
+        public static float JumperForceMultiplier = 1.025f;
         public static float BoosterForceMultiplier = 1.00f;
 
         public const float MinSafeLimit = 1.00f;
-        public const float MaxSafeLimit = 1.025f; // Повысили безопасный лимит!
+        public const float MaxSafeLimit = 1.025f;
+
+        // Создаем экземпляр модуля таймера
+        private TimerModule timerModule = new TimerModule();
+
+        public void OnUpdate()
+        {
+            timerModule.OnUpdate();
+        }
 
         public void DrawUI(float x, float y, float contentWidth)
         {
@@ -27,13 +34,12 @@ namespace SpeedrunToolkitMod
 
             if (EnableJumperFix)
             {
-                GUI.Label(new Rect(x + 15f, y, contentWidth - 15f, 20), $"Jump Height Multiplier: <b>{JumperForceMultiplier:F3}x</b>"); // F3 для 1.025
+                GUI.Label(new Rect(x + 15f, y, contentWidth - 15f, 20), $"Jump Height Multiplier: <b>{JumperForceMultiplier:F3}x</b>");
                 y += 18f;
 
                 float prevJumper = JumperForceMultiplier;
                 JumperForceMultiplier = GUI.HorizontalSlider(new Rect(x + 15f, y, contentWidth - 125f, 15), JumperForceMultiplier, 0.5f, 2.0f);
 
-                // Кнопка сброса на новый лимит
                 if (GUI.Button(new Rect(x + contentWidth - 105f, y - 2f, 105f, 20f), "Reset (1.025x)"))
                 {
                     JumperForceMultiplier = 1.025f;
@@ -71,12 +77,12 @@ namespace SpeedrunToolkitMod
 
                 y += 25f;
             }
+
             // --- VISUAL HELPERS ---
             y += 10f;
             GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>Visual Helpers</b>");
             y += 22f;
 
-            // 1. Траектория
             TrajectoryModule.EnableTrajectory = GUI.Toggle(
                 new Rect(x, y, contentWidth, 20f),
                 TrajectoryModule.EnableTrajectory,
@@ -84,7 +90,6 @@ namespace SpeedrunToolkitMod
             );
             y += 22f;
 
-            // 2. Триггеры (с ручным Rect вместо GUILayout)
             bool newTriggerState = GUI.Toggle(
                 new Rect(x, y, contentWidth, 20f),
                 TriggerVisualizer.EnableTriggers,
@@ -96,15 +101,32 @@ namespace SpeedrunToolkitMod
                 TriggerVisualizer.EnableTriggers = newTriggerState;
             }
             y += 25f;
+
+            // --- GENERAL QOL ---
+            y += 10f;
+            GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>General QoL</b>");
+            y += 22f;
+
+            Main.instantRespawn = GUI.Toggle(
+                new Rect(x, y, contentWidth, 20f),
+                Main.instantRespawn,
+                " Instant Respawn on Death (EXPERIMENTAL)"
+            );
+            y += 25f;
+
+            // --- HIGH-PRECISION TIMER SETTINGS ---
+            // y += 10f;
+           // GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>High-Precision Timer</b>");
+           // y += 22f;
+
+            // Вызываем отрисовку интерфейса таймера
+            // timerModule.DrawUI(x, y, contentWidth);
         }
 
-        // --- ЛОГИКА ANTI-CHEAT (СКРЫТИЕ ФИНИША) ---
         public static void CheckFinishAbuse()
         {
-            // Проверка по новому лимиту 1.025f
             bool isJumperAbused = EnableJumperFix && (JumperForceMultiplier < MinSafeLimit || JumperForceMultiplier > MaxSafeLimit);
             bool isBoosterAbused = EnableBoosterFix && (BoosterForceMultiplier < MinSafeLimit || BoosterForceMultiplier > MaxSafeLimit);
-
             bool isAbused = isJumperAbused || isBoosterAbused;
 
             GameObject[] allObjects = Object.FindObjectsOfType<GameObject>(true);
@@ -126,7 +148,6 @@ namespace SpeedrunToolkitMod
         public static bool Prefix(Jumpbox __instance, Collider other)
         {
             if (!FixesModule.EnableJumperFix) return true;
-
             FixesModule.CheckFinishAbuse();
 
             var fps = other.GetComponent<FirstPersonController>();
@@ -142,15 +163,10 @@ namespace SpeedrunToolkitMod
                 other.transform.position = new Vector3(currentPos.x, topY + __instance.jumpOffset, currentPos.z);
 
                 Rigidbody rb = other.GetComponent<Rigidbody>();
-                if (rb != null)
-                {
-                    rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-                }
+                if (rb != null) rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
 
-                // Используем новый лимит 1.025
                 fps.JumpboxJump(__instance.jumpForce * FixesModule.JumperForceMultiplier);
             }
-
             return false;
         }
     }
@@ -162,7 +178,6 @@ namespace SpeedrunToolkitMod
         public static bool Prefix(Booster __instance, Collider other)
         {
             if (!FixesModule.EnableBoosterFix) return true;
-
             FixesModule.CheckFinishAbuse();
 
             var controller = other.GetComponent<CharacterController>();
@@ -174,10 +189,7 @@ namespace SpeedrunToolkitMod
                 if (audio != null) audio.Play("booster");
 
                 Rigidbody rb = other.GetComponent<Rigidbody>();
-                if (rb != null)
-                {
-                    rb.velocity = Vector3.zero;
-                }
+                if (rb != null) rb.velocity = Vector3.zero;
 
                 fakeForce.SetFakeForce(
                     __instance.forwardForce * FixesModule.BoosterForceMultiplier,
@@ -186,7 +198,6 @@ namespace SpeedrunToolkitMod
                 );
                 fakeForce.ApplyFakeForce();
             }
-
             return false;
         }
     }

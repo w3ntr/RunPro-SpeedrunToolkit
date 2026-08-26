@@ -1,7 +1,8 @@
+using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.1.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.2.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -20,7 +21,44 @@ namespace SpeedrunToolkitMod
         public static SlomoModule Slomo = new SlomoModule();
         private CrosshairModule crosshairModule = new CrosshairModule();
         public FixesModule fixesModule = new FixesModule();
+       // private TimerModule timerModule = new TimerModule();
         private bool showMenu = false;
+        public static bool instantRespawn = false;
+        private static float lastRespawnTime = 0f;
+
+
+        private void HandleInstantRespawn()
+        {
+            if (!instantRespawn) return;
+            if (Time.time - lastRespawnTime < 0.2f) return;
+
+            ScoreBoardCanvas scoreBoard = Object.FindObjectOfType<ScoreBoardCanvas>();
+            if (scoreBoard != null && scoreBoard.gameObject.activeSelf)
+            {
+                if (scoreBoard.m_deathImg != null && scoreBoard.m_deathImg.activeSelf)
+                {
+                    lastRespawnTime = Time.time;
+
+                    // 1. Гасим экраны смерти
+                    scoreBoard.m_deathImg.SetActive(false);
+                    scoreBoard.gameObject.SetActive(false);
+
+                    // 2. Возвращаем захват мыши (игра отключает его при смерти)
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
+
+                    // 3. Вызываем родной респавн
+                    scoreBoard.On_TryAgain();
+
+                    // 4. Принудительно включаем контроллер игрока
+                    var fps = Object.FindObjectOfType<Il2Cpp.FirstPersonController>();
+                    if (fps != null)
+                    {
+                        fps.enabled = true;
+                    }
+                }
+            }
+        }
         private int selectedTab = 0;
 
         // Keybinding settings
@@ -150,7 +188,7 @@ namespace SpeedrunToolkitMod
                 movementModule.Reset();
             }
         }
-        
+
 
         public override void OnUpdate()
         {
@@ -222,7 +260,12 @@ namespace SpeedrunToolkitMod
 
                 movementModule.Update();
                 TrajectoryModule.Update();
+                graphicsModule.OnUpdate();
+                // timerModule.OnUpdate();
             }
+
+            // Мгновенный респавн проверяется каждый кадр
+            HandleInstantRespawn();
         }
 
         public override void OnFixedUpdate()
@@ -275,14 +318,14 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.1.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.2.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
             float contentWidth = menuWidth - 30f;
 
             // Добавлена вкладка "Fixes" (всего 11 вкладок)
-            string[] tabNames = new string[] { "Practice", "HUD", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Fixes", "Slomo", "Info" };
+            string[] tabNames = new string[] { "Practice", "HUD", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Fix & QoL", "Slomo", "Info" };
             int tabsPerRow = 5;
             float tabGap = 3f;
             float tabWidth = (contentWidth - (tabGap * (tabsPerRow - 1))) / tabsPerRow;
@@ -488,8 +531,8 @@ namespace SpeedrunToolkitMod
 
                 GUI.Label(new Rect(x, y, contentWidth, 80),
                     "<b>Hotkeys:</b>\n" +
-                    " • <b>[</b> / <b>]</b> или <b>Numpad - / +</b> : Изменить скорость (-/+ 0.1x)\n" +
-                    " • <b>Numpad 0</b> : Сбросить скорость на 1.0x"
+                    " • <b>[</b> / <b>]</b> Or <b>Numpad - / +</b> : Change Speed (-/+ 0.1x)\n" +
+                    " • <b>Numpad 0</b> : Reset Speed on 1.0x"
                 );
             }
             else if (selectedTab == 10)
@@ -506,7 +549,7 @@ namespace SpeedrunToolkitMod
                     "• <b>F3</b> — Toggle Freecam Mode\n" +
                     "• <b>[ / ]</b> or <b>Numpad - / +</b> — Adjust Game Speed\n" +
                     "• <b>Numpad 0</b> — Reset Speed to 1.0x\n\n" +
-                    "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.02x in Fixes tab disables the finish trigger to keep leaderboards fair.";
+                    "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.02x in Fix & QoL tab disables the finish trigger to keep leaderboards fair.";
 
                 GUI.Label(new Rect(x, y, contentWidth, 280), infoText);
             }
@@ -519,7 +562,6 @@ namespace SpeedrunToolkitMod
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
             }
-
         }
 
         private void DrawRebindButton(float x, ref float y, float width, string label, KeyCode currentKey, int rebindIndex)

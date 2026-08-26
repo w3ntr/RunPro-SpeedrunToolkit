@@ -1,4 +1,4 @@
-using MelonLoader;
+﻿using MelonLoader;
 using UnityEngine;
 
 namespace SpeedrunToolkitMod
