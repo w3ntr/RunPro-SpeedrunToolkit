@@ -11,6 +11,8 @@ namespace SpeedrunToolkitMod
     public class GraphicsModule
     {
         public bool DisablePostProcessing = false;
+        public bool DisableVSync = false;
+        private MelonPreferences_Entry<bool> configDisableVSync;
         public bool DisableShadows = false;
         public bool HideHands = false;
         public bool HideGameHUD = false;
@@ -31,6 +33,11 @@ namespace SpeedrunToolkitMod
         private List<string> customImageFiles = new List<string>();
         private Dictionary<string, Material> customMaterialsCache = new Dictionary<string, Material>();
 
+        // Index system:
+        // 0 = Map Default
+        // 1 .. nativeCount = Native Skyboxes
+        // nativeCount + 1 = Solid Black
+        // nativeCount + 2 .. N = Custom Images
         public int CurrentSkyboxIndex = 0;
 
         // Distance Settings
@@ -42,9 +49,6 @@ namespace SpeedrunToolkitMod
         private float defaultFarClip = 1000f;
         private float defaultShadowDist = 150f;
         private bool hasDefaults = false;
-
-        // Для отслеживания смены камеры и предотвращения вспышек
-        private Camera lastCamera = null;
 
         private MelonPreferences_Category configCategory;
         private MelonPreferences_Entry<bool> configDisablePP;
@@ -63,6 +67,8 @@ namespace SpeedrunToolkitMod
         {
             configCategory = MelonPreferences.CreateCategory("GraphicsMod", "Graphics Settings");
             configDisablePP = configCategory.CreateEntry("DisablePostProcessing", false, "Disable Post Processing");
+            configDisableVSync = configCategory.CreateEntry("DisableVSync", false, "Disable V-Sync");
+            DisableVSync = configDisableVSync.Value;
             configDisableShadows = configCategory.CreateEntry("DisableShadows", false, "Disable Shadows");
             configHideHands = configCategory.CreateEntry("HideHands", false, "Hide First Person Hands");
             configHideGameHUD = configCategory.CreateEntry("HideGameHUD", false, "Hide Native Game HUD");
@@ -161,6 +167,7 @@ namespace SpeedrunToolkitMod
 
                 Shader targetShader = null;
 
+                // 1. Ищем панорамный шейдер в памяти игры среди всех загруженных
                 var allShaders = Resources.FindObjectsOfTypeAll<Shader>();
                 foreach (var s in allShaders)
                 {
@@ -171,6 +178,7 @@ namespace SpeedrunToolkitMod
                     }
                 }
 
+                // 2. Стандартные попытки поиска
                 if (targetShader == null) targetShader = Shader.Find("Skybox/Panoramic");
 
                 bool is6Sided = false;
@@ -191,6 +199,7 @@ namespace SpeedrunToolkitMod
 
                     if (is6Sided)
                     {
+                        // Заполняем все 6 граней картинкой, чтобы Skybox/6 Sided её отрисовал
                         mat.SetTexture("_FrontTex", tex);
                         mat.SetTexture("_BackTex", tex);
                         mat.SetTexture("_LeftTex", tex);
@@ -208,6 +217,10 @@ namespace SpeedrunToolkitMod
                     customMaterialsCache[filePath] = mat;
                     MelonLogger.Msg($"[Graphics] Applied custom skybox with shader: {targetShader.name}");
                     return mat;
+                }
+                else
+                {
+                    MelonLogger.Error("[Graphics] Couldn't find any skybox shader in game memory!");
                 }
             }
             catch (System.Exception ex)
@@ -247,6 +260,15 @@ namespace SpeedrunToolkitMod
             }
 
             QualitySettings.shadows = DisableShadows ? ShadowQuality.Disable : ShadowQuality.All;
+
+            // 0 = V-Sync отключен, 1 = включен (60/144 FPS)
+            QualitySettings.vSyncCount = DisableVSync ? 0 : 1;
+
+            // Если V-Sync отключен, снимаем ограничение кадров (-1 = без ограничений)
+            if (DisableVSync)
+            {
+                Application.targetFrameRate = -1;
+            }
 
             if (EnableCustomShadowDistance)
             {
@@ -340,40 +362,10 @@ namespace SpeedrunToolkitMod
             DynamicGI.UpdateEnvironment();
         }
 
-        // Вызывается каждый кадр из Main.cs для перехвата момента смены сцены / рестарта
-        public void OnUpdate()
-        {
-            Camera mainCam = Camera.main;
-
-            // Если камера поменялась (или только что появилась при загрузке уровня)
-            if (mainCam != lastCamera)
-            {
-                lastCamera = mainCam;
-                if (mainCam != null)
-                {
-                    ApplyGraphicsSettings();
-                }
-            }
-
-            // Жестко страхуем цвета фона каждый кадр, чтобы предотвратить дефолтные вспышки
-            if (mainCam != null)
-            {
-                EnsureSkyboxNamesLoaded();
-                int nativeCount = availableSkyboxNames.Count;
-                int idxBlack = nativeCount + 1;
-
-                if (CurrentSkyboxIndex == idxBlack)
-                {
-                    mainCam.clearFlags = CameraClearFlags.SolidColor;
-                    mainCam.backgroundColor = Color.black;
-                }
-            }
-        }
-
         public void NextSkybox()
         {
             EnsureSkyboxNamesLoaded();
-            int total = availableSkyboxNames.Count + 1 + 1 + customImageFiles.Count;
+            int total = availableSkyboxNames.Count + 1 + 1 + customImageFiles.Count; // Default + Native + Black + Custom Files
             CurrentSkyboxIndex = (CurrentSkyboxIndex + 1) % total;
             ApplyGraphicsSettings();
         }
@@ -470,6 +462,7 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
+            // Refresh Custom Skyboxes Button
             if (GUI.Button(new Rect(startX, y, width, 22), "📁 Rescan Custom Skyboxes Folder"))
             {
                 ScanCustomSkyboxes();
@@ -482,6 +475,16 @@ namespace SpeedrunToolkitMod
             {
                 DisablePostProcessing = newPP;
                 configDisablePP.Value = DisablePostProcessing;
+                configCategory.SaveToFile();
+                ApplyGraphicsSettings();
+            }
+            y += 22f;
+
+            bool newVSync = GUI.Toggle(new Rect(startX, y, width, 20), DisableVSync, " Disable V-Sync (Uncap FPS)");
+            if (newVSync != DisableVSync)
+            {
+                DisableVSync = newVSync;
+                configDisableVSync.Value = DisableVSync;
                 configCategory.SaveToFile();
                 ApplyGraphicsSettings();
             }
