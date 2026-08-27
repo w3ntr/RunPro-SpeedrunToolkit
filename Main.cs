@@ -2,7 +2,7 @@ using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.2.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.3.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -260,7 +260,6 @@ namespace SpeedrunToolkitMod
 
                 movementModule.Update();
                 TrajectoryModule.Update();
-                graphicsModule.OnUpdate();
                 // timerModule.OnUpdate();
             }
 
@@ -318,7 +317,7 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.2.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.3.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
@@ -537,8 +536,8 @@ namespace SpeedrunToolkitMod
             }
             else if (selectedTab == 10)
             {
-                GUI.Label(new Rect(x, y, contentWidth, 20), "<b>📖 Hotkeys & Information</b>");
-                y += 22;
+                GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>📖 Hotkeys & Information</b>");
+                y += 22f;
 
                 string infoText =
                     $"• <b>{menuKey}</b> — Toggle Settings Menu\n" +
@@ -549,9 +548,22 @@ namespace SpeedrunToolkitMod
                     "• <b>F3</b> — Toggle Freecam Mode\n" +
                     "• <b>[ / ]</b> or <b>Numpad - / +</b> — Adjust Game Speed\n" +
                     "• <b>Numpad 0</b> — Reset Speed to 1.0x\n\n" +
-                    "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.02x in Fix & QoL tab disables the finish trigger to keep leaderboards fair.";
+                    "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.02x in Fix & QoL tab disables the finish trigger to keep leaderboards fair.\n\n" +
+                    "--------------------------------------------------\n" +
+                    "<b>🔥 ULTRA POTATO MODE INFO</b>\n" +
+                    "--------------------------------------------------\n" +
+                    "• <b>Solid Background:</b> Replaces skybox mesh with flat black color to bypass sky shaders.\n" +
+                    "• <b>Extreme Downscaling:</b> Forces maximum texture compression and ultra-low 3D LODs.\n" +
+                    "• <b>Far Clip Distance:</b> Limits camera render distance to 30m to drop distant geometry.\n" +
+                    "• <b>Light Suppression:</b> Disables Point/Spot lights and real-time shadow calculations.\n" +
+                    "• <b>Uncapped Latency:</b> Sets V-Sync to 0 and queued frames to 0 for minimum input lag.\n\n" +
+                    "<b>📺 Resolution Presets:</b>\n" +
+                    "• <b>480p Full:</b> Stretches pixelated 480x270 viewport across full monitor for max FPS.\n" +
+                    "• <b>480p Window:</b> Switches game into a compact 480x270 window.\n" +
+                    "• <b>Native Res:</b> Restores your monitor's original screen resolution.";
 
-                GUI.Label(new Rect(x, y, contentWidth, 280), infoText);
+                // Увеличена высота блока с 280 до 520px
+                GUI.Label(new Rect(x, y, contentWidth, 520f), infoText);
             }
 
             y = menuRect.y + menuHeight - 35f;

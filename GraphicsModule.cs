@@ -1,15 +1,22 @@
 ﻿using MelonLoader;
-using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.Rendering.PostProcessing;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.PostProcessing;
+using UnityEngine.UI.Extensions;
 
 namespace SpeedrunToolkitMod
 {
     public class GraphicsModule
     {
+        // Сохраняем исходное разрешение монитора при старте
+        private int originalWidth = Screen.width;
+        private int originalHeight = Screen.height;
+        private Vector2 scrollPosition = Vector2.zero;
+        private bool isPotatoMode = false;
+        private System.Collections.Generic.List<Light> disabledLights = new System.Collections.Generic.List<Light>();
         public bool DisablePostProcessing = false;
         public bool DisableVSync = false;
         public int TargetFPS = -1; // -1 означает "Без ограничений" (Uncapped)
@@ -374,6 +381,120 @@ namespace SpeedrunToolkitMod
             DynamicGI.UpdateEnvironment();
         }
 
+        public void ApplyUltraPotatoMode()
+        {
+            isPotatoMode = true;
+            disabledLights.Clear();
+
+            // 1. Ограничения Камеры
+            if (Camera.main != null)
+            {
+                Camera.main.clearFlags = CameraClearFlags.SolidColor;
+                Camera.main.backgroundColor = Color.black;
+                Camera.main.farClipPlane = 30f; // Обрезка 30м
+            }
+            RenderSettings.fog = false;
+
+            // 2. Ультра-Картофельные QualitySettings
+            QualitySettings.masterTextureLimit = 8;
+            QualitySettings.pixelLightCount = 0;
+            QualitySettings.antiAliasing = 0;
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.Disable;
+            QualitySettings.shadows = ShadowQuality.Disable;
+            QualitySettings.realtimeReflectionProbes = false;
+            QualitySettings.billboardsFaceCameraPosition = false;
+            QualitySettings.softVegetation = false;
+            QualitySettings.particleRaycastBudget = 0;
+            QualitySettings.lodBias = 0.01f;
+
+            // 3. Выключаем точечный свет и запоминаем его
+            foreach (var light in UnityEngine.Object.FindObjectsOfType<Light>())
+            {
+                if (light != null && light.enabled && (light.type == LightType.Point || light.type == LightType.Spot))
+                {
+                    disabledLights.Add(light);
+                    light.enabled = false;
+                }
+            }
+
+            // 4. Снятие лимита кадров
+            QualitySettings.vSyncCount = 0;
+            QualitySettings.maxQueuedFrames = 0;
+            Application.targetFrameRate = -1;
+        }
+
+        public void RestoreDefaultGraphics()
+        {
+            isPotatoMode = false;
+
+            // 1. Возвращаем Камеру
+            if (Camera.main != null)
+            {
+                Camera.main.clearFlags = CameraClearFlags.Skybox;
+                Camera.main.farClipPlane = 1000f; // Стандартная дальность рендера
+            }
+            RenderSettings.fog = true;
+
+            // 2. Восстанавливаем Качество
+            QualitySettings.masterTextureLimit = 0; // Максимальное разрешение текстур
+            QualitySettings.pixelLightCount = 4;
+            QualitySettings.antiAliasing = 2;
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.realtimeReflectionProbes = true;
+            QualitySettings.billboardsFaceCameraPosition = true;
+            QualitySettings.softVegetation = true;
+            QualitySettings.particleRaycastBudget = 4096;
+            QualitySettings.lodBias = 1.0f; // Обычные LOD-модели
+
+            // 3. Включаем обратно сохраненный свет
+            foreach (var light in disabledLights)
+            {
+                if (light != null) light.enabled = true;
+            }
+            disabledLights.Clear();
+
+            // 4. Применяем твои пользовательские настройки из конфига (V-Sync, ПП и т.д.)
+            ApplyGraphicsSettings();
+        }
+
+        // 1. Полноэкранный 480x270 (Пиксельный растянутый рендер)
+        public void ApplyPotatoFullscreen()
+        {
+            // Сохраняем реальные размеры экрана перед сбросом
+            if (Screen.width > 600) originalWidth = Screen.width;
+            if (Screen.height > 400) originalHeight = Screen.height;
+
+            Screen.SetResolution(480, 270, FullScreenMode.ExclusiveFullScreen);
+        }
+
+        // 2. Оконный 480x270 (Компактное окно)
+        public void ApplyPotatoWindowed()
+        {
+            if (Screen.width > 600) originalWidth = Screen.width;
+            if (Screen.height > 400) originalHeight = Screen.height;
+
+            Screen.SetResolution(480, 270, false);
+        }
+
+        // 1. Ультра-низкое 320x240 (4:3) Полноэкранное
+        public void ApplyPotato320x240Full()
+        {
+            Screen.SetResolution(320, 240, FullScreenMode.ExclusiveFullScreen);
+        }
+
+        // 2. Ультра-низкое 320x180 (16:9) Полноэкранное
+        public void ApplyPotato320x180Full()
+        {
+            Screen.SetResolution(320, 180, FullScreenMode.ExclusiveFullScreen);
+        }
+
+        // 3. Возврат родного разрешения монитора
+        public void RestoreNativeResolution()
+        {
+            Screen.SetResolution(originalWidth, originalHeight, FullScreenMode.FullScreenWindow);
+        }
+
         public void NextSkybox()
         {
             EnsureSkyboxNamesLoaded();
@@ -420,13 +541,72 @@ namespace SpeedrunToolkitMod
 
         public void DrawUI(float startX, float startY, float width)
         {
-            float y = startY;
+            // Внутреннее окно прокрутки увеличено до 950px по высоте
+            scrollPosition = GUI.BeginScrollView(
+                new Rect(startX, startY, width, 360f),
+                scrollPosition,
+                new Rect(0, 0, width - 20f, 950f)
+            );
 
-            GUI.Label(new Rect(startX, y, width, 20), "<b>Graphics & View Settings</b>");
+            float y = 5f;
+            float contentWidth = width - 25f;
+
+            // 1. Главный переключатель Potato Mode
+            string potatoBtnText = isPotatoMode ? "⚡ RESTORE NORMAL GRAPHICS" : "🔥 ENABLE ULTRA POTATO MODE";
+            if (GUI.Button(new Rect(0, y, contentWidth, 25f), potatoBtnText))
+            {
+                if (isPotatoMode)
+                {
+                    RestoreDefaultGraphics();
+                }
+                else
+                {
+                    ApplyUltraPotatoMode();
+                }
+            }
+            y += 30f;
+
+            // 2. Блок быстрых пресетов разрешения (Potato Resolution)
+            GUI.Label(new Rect(0, y, contentWidth, 18f), "<b>Potato Resolution Presets:</b>");
+            y += 20f;
+
+            float thirdWidth = (contentWidth - 10f) / 3f;
+            if (GUI.Button(new Rect(0, y, thirdWidth, 22f), "🖥️ 480p Full"))
+            {
+                ApplyPotatoFullscreen();
+            }
+            if (GUI.Button(new Rect(thirdWidth + 5f, y, thirdWidth, 22f), "🔲 480p Window"))
+            {
+                ApplyPotatoWindowed();
+            }
+            if (GUI.Button(new Rect((thirdWidth * 2f) + 10f, y, thirdWidth, 22f), "🔄 Native Res"))
+            {
+                RestoreNativeResolution();
+            }
+            y += 28f;
+
+            GUI.Label(new Rect(0, y, contentWidth, 18f), "<b>Extreme Pixel Resolutions:</b>");
+            y += 20f;
+
+            float halfWidth = (contentWidth - 5f) / 2f;
+
+            if (GUI.Button(new Rect(0, y, halfWidth, 22f), "👾 320x240 (4:3)"))
+            {
+                ApplyPotato320x240Full();
+            }
+
+            if (GUI.Button(new Rect(halfWidth + 5f, y, halfWidth, 22f), "👾 320x180 (16:9)"))
+            {
+                ApplyPotato320x180Full();
+            }
+            y += 26f;
+
+            // 3. Стандартные настройки графики
+            GUI.Label(new Rect(0, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
             y += 24f;
 
             // Dark Mode
-            bool newDarkMode = GUI.Toggle(new Rect(startX, y, width, 20), EnableDarkMode, " Enable Dark Mode");
+            bool newDarkMode = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableDarkMode, " Enable Dark Mode");
             if (newDarkMode != EnableDarkMode)
             {
                 EnableDarkMode = newDarkMode;
@@ -460,29 +640,29 @@ namespace SpeedrunToolkitMod
                 }
             }
 
-            GUI.Label(new Rect(startX, y, width, 18), $"Skybox: <b>{skyName}</b>");
+            GUI.Label(new Rect(0, y, contentWidth, 18f), $"Skybox: <b>{skyName}</b>");
             y += 20f;
 
-            float btnWidth = (width - 10f) / 2f;
-            if (GUI.Button(new Rect(startX, y, btnWidth, 22), "◄ Previous Sky"))
+            float skyBtnWidth = (contentWidth - 10f) / 2f;
+            if (GUI.Button(new Rect(0, y, skyBtnWidth, 22f), "◄ Previous Sky"))
             {
                 PreviousSkybox();
             }
-            if (GUI.Button(new Rect(startX + btnWidth + 10f, y, btnWidth, 22), "Next Sky ►"))
+            if (GUI.Button(new Rect(skyBtnWidth + 10f, y, skyBtnWidth, 22f), "Next Sky ►"))
             {
                 NextSkybox();
             }
             y += 26f;
 
             // Refresh Custom Skyboxes Button
-            if (GUI.Button(new Rect(startX, y, width, 22), "📁 Rescan Custom Skyboxes Folder"))
+            if (GUI.Button(new Rect(0, y, contentWidth, 22f), "📁 Rescan Custom Skyboxes Folder"))
             {
                 ScanCustomSkyboxes();
             }
             y += 26f;
 
             // Post-Processing
-            bool newPP = GUI.Toggle(new Rect(startX, y, width, 20), DisablePostProcessing, " Disable Post-Processing (Bloom, FX)");
+            bool newPP = GUI.Toggle(new Rect(0, y, contentWidth, 20f), DisablePostProcessing, " Disable Post-Processing (Bloom, FX)");
             if (newPP != DisablePostProcessing)
             {
                 DisablePostProcessing = newPP;
@@ -492,13 +672,10 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            GUI.Label(new Rect(startX, y, 100, 20), "FPS Limit:");
-
-            // Текстовое поле для ввода своего числа
-            fpsInputBuffer = GUI.TextField(new Rect(startX + 75, y, 50, 20), fpsInputBuffer);
-
-            // Кнопка применить для поля ввода
-            if (GUI.Button(new Rect(startX + 130, y, 50, 20), "Set"))
+            // FPS Limit
+            GUI.Label(new Rect(0, y, 70f, 20f), "FPS Limit:");
+            fpsInputBuffer = GUI.TextField(new Rect(75f, y, 50f, 20f), fpsInputBuffer);
+            if (GUI.Button(new Rect(130f, y, 50f, 20f), "Set"))
             {
                 if (int.TryParse(fpsInputBuffer, out int parsedFPS))
                 {
@@ -508,17 +685,17 @@ namespace SpeedrunToolkitMod
                     ApplyGraphicsSettings();
                 }
             }
-
             y += 25f;
 
-            // Быстрые кнопки-пресеты
+            // Быстрые кнопки-пресеты FPS
             int[] presets = new int[] { -1, 60, 120, 144, 240, 360 };
-            float btnX = startX;
+            float btnX = 0f;
+            float presetBtnWidth = (contentWidth - 25f) / 6f;
 
             foreach (int fps in presets)
             {
                 string label = fps == -1 ? "Max" : fps.ToString();
-                if (GUI.Button(new Rect(btnX, y, 45, 20), label))
+                if (GUI.Button(new Rect(btnX, y, presetBtnWidth, 20f), label))
                 {
                     TargetFPS = fps;
                     fpsInputBuffer = fps.ToString();
@@ -526,12 +703,12 @@ namespace SpeedrunToolkitMod
                     configCategory.SaveToFile();
                     ApplyGraphicsSettings();
                 }
-                btnX += 50f;
+                btnX += presetBtnWidth + 5f;
             }
             y += 25f;
 
             // Shadows
-            bool newShadows = GUI.Toggle(new Rect(startX, y, width, 20), DisableShadows, " Disable Shadows (FPS Boost)");
+            bool newShadows = GUI.Toggle(new Rect(0, y, contentWidth, 20f), DisableShadows, " Disable Shadows (FPS Boost)");
             if (newShadows != DisableShadows)
             {
                 DisableShadows = newShadows;
@@ -542,7 +719,7 @@ namespace SpeedrunToolkitMod
             y += 22f;
 
             // Custom Draw Distance
-            bool newCustomDist = GUI.Toggle(new Rect(startX, y, width, 20), EnableCustomRenderDistance, " Enable Custom Draw Distance");
+            bool newCustomDist = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableCustomRenderDistance, " Enable Custom Draw Distance");
             if (newCustomDist != EnableCustomRenderDistance)
             {
                 EnableCustomRenderDistance = newCustomDist;
@@ -554,9 +731,9 @@ namespace SpeedrunToolkitMod
 
             if (EnableCustomRenderDistance)
             {
-                GUI.Label(new Rect(startX, y, width, 18), $"Draw Distance: {(int)RenderDistance}m");
+                GUI.Label(new Rect(0, y, contentWidth, 18f), $"Draw Distance: {(int)RenderDistance}m");
                 y += 16f;
-                float newDist = GUI.HorizontalSlider(new Rect(startX, y, width, 15), RenderDistance, 50f, 3000f);
+                float newDist = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 15f), RenderDistance, 50f, 3000f);
                 if (Mathf.Abs(newDist - RenderDistance) > 1f)
                 {
                     RenderDistance = newDist;
@@ -567,7 +744,7 @@ namespace SpeedrunToolkitMod
             }
 
             // Custom Shadow Distance
-            bool newCustomShadow = GUI.Toggle(new Rect(startX, y, width, 20), EnableCustomShadowDistance, " Enable Custom Shadow Distance");
+            bool newCustomShadow = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableCustomShadowDistance, " Enable Custom Shadow Distance");
             if (newCustomShadow != EnableCustomShadowDistance)
             {
                 EnableCustomShadowDistance = newCustomShadow;
@@ -579,9 +756,9 @@ namespace SpeedrunToolkitMod
 
             if (EnableCustomShadowDistance)
             {
-                GUI.Label(new Rect(startX, y, width, 18), $"Shadow Distance: {(int)ShadowDistance}m");
+                GUI.Label(new Rect(0, y, contentWidth, 18f), $"Shadow Distance: {(int)ShadowDistance}m");
                 y += 16f;
-                float newShadow = GUI.HorizontalSlider(new Rect(startX, y, width, 15), ShadowDistance, 0f, 500f);
+                float newShadow = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 15f), ShadowDistance, 0f, 500f);
                 if (Mathf.Abs(newShadow - ShadowDistance) > 1f)
                 {
                     ShadowDistance = newShadow;
@@ -592,7 +769,7 @@ namespace SpeedrunToolkitMod
             }
 
             // Hide Hands
-            bool newHands = GUI.Toggle(new Rect(startX, y, width, 20), HideHands, " Hide First-Person Hands");
+            bool newHands = GUI.Toggle(new Rect(0, y, contentWidth, 20f), HideHands, " Hide First-Person Hands");
             if (newHands != HideHands)
             {
                 HideHands = newHands;
@@ -603,7 +780,7 @@ namespace SpeedrunToolkitMod
             y += 22f;
 
             // HideGameHUD
-            bool newHUD = GUI.Toggle(new Rect(startX, y, width, 20), HideGameHUD, " Hide Native Game HUD");
+            bool newHUD = GUI.Toggle(new Rect(0, y, contentWidth, 20f), HideGameHUD, " Hide Native Game HUD");
             if (newHUD != HideGameHUD)
             {
                 HideGameHUD = newHUD;
@@ -615,7 +792,7 @@ namespace SpeedrunToolkitMod
 
             // QualitySettings
             string qualityText = TextureQuality == 0 ? "High (Default)" : (TextureQuality == 1 ? "Medium (1/2)" : "Low / Potato (1/4)");
-            if (GUI.Button(new Rect(startX, y, width, 22), $"Textures: [{qualityText}]"))
+            if (GUI.Button(new Rect(0, y, contentWidth, 22f), $"Textures: [{qualityText}]"))
             {
                 TextureQuality = (TextureQuality + 1) % 3;
                 configTextureQuality.Value = TextureQuality;
@@ -625,10 +802,12 @@ namespace SpeedrunToolkitMod
             y += 26f;
 
             // ForceApply
-            if (GUI.Button(new Rect(startX, y, width, 22), "🔄 Force Apply All Settings"))
+            if (GUI.Button(new Rect(0, y, contentWidth, 22f), "🔄 Force Apply All Settings"))
             {
                 ApplyGraphicsSettings();
             }
+
+            GUI.EndScrollView();
         }
     }
 }
