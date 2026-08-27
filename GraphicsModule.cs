@@ -12,6 +12,10 @@ namespace SpeedrunToolkitMod
     {
         public bool DisablePostProcessing = false;
         public bool DisableVSync = false;
+        public int TargetFPS = -1; // -1 означает "Без ограничений" (Uncapped)
+        private MelonPreferences_Entry<int> configTargetFPS;
+
+        private string fpsInputBuffer = "-1"; // Буфер для текстового поля UI
         private MelonPreferences_Entry<bool> configDisableVSync;
         public bool DisableShadows = false;
         public bool HideHands = false;
@@ -69,6 +73,9 @@ namespace SpeedrunToolkitMod
             configDisablePP = configCategory.CreateEntry("DisablePostProcessing", false, "Disable Post Processing");
             configDisableVSync = configCategory.CreateEntry("DisableVSync", false, "Disable V-Sync");
             DisableVSync = configDisableVSync.Value;
+            configTargetFPS = configCategory.CreateEntry("TargetFPS", -1, "Target Frame Rate (-1 for Uncapped)");
+            TargetFPS = configTargetFPS.Value;
+            fpsInputBuffer = TargetFPS.ToString();
             configDisableShadows = configCategory.CreateEntry("DisableShadows", false, "Disable Shadows");
             configHideHands = configCategory.CreateEntry("HideHands", false, "Hide First Person Hands");
             configHideGameHUD = configCategory.CreateEntry("HideGameHUD", false, "Hide Native Game HUD");
@@ -264,10 +271,15 @@ namespace SpeedrunToolkitMod
             // 0 = V-Sync отключен, 1 = включен (60/144 FPS)
             QualitySettings.vSyncCount = DisableVSync ? 0 : 1;
 
-            // Если V-Sync отключен, снимаем ограничение кадров (-1 = без ограничений)
             if (DisableVSync)
             {
-                Application.targetFrameRate = -1;
+                QualitySettings.vSyncCount = 0;
+                Application.targetFrameRate = TargetFPS; // Применяем наш лимит
+            }
+            else
+            {
+                QualitySettings.vSyncCount = 1;
+                Application.targetFrameRate = -1; // Если V-Sync включен, отдаем управление ему
             }
 
             if (EnableCustomShadowDistance)
@@ -480,15 +492,43 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            bool newVSync = GUI.Toggle(new Rect(startX, y, width, 20), DisableVSync, " Disable V-Sync (Uncap FPS)");
-            if (newVSync != DisableVSync)
+            GUI.Label(new Rect(startX, y, 100, 20), "FPS Limit:");
+
+            // Текстовое поле для ввода своего числа
+            fpsInputBuffer = GUI.TextField(new Rect(startX + 75, y, 50, 20), fpsInputBuffer);
+
+            // Кнопка применить для поля ввода
+            if (GUI.Button(new Rect(startX + 130, y, 50, 20), "Set"))
             {
-                DisableVSync = newVSync;
-                configDisableVSync.Value = DisableVSync;
-                configCategory.SaveToFile();
-                ApplyGraphicsSettings();
+                if (int.TryParse(fpsInputBuffer, out int parsedFPS))
+                {
+                    TargetFPS = parsedFPS;
+                    configTargetFPS.Value = TargetFPS;
+                    configCategory.SaveToFile();
+                    ApplyGraphicsSettings();
+                }
             }
-            y += 22f;
+
+            y += 25f;
+
+            // Быстрые кнопки-пресеты
+            int[] presets = new int[] { -1, 60, 120, 144, 240, 360 };
+            float btnX = startX;
+
+            foreach (int fps in presets)
+            {
+                string label = fps == -1 ? "Max" : fps.ToString();
+                if (GUI.Button(new Rect(btnX, y, 45, 20), label))
+                {
+                    TargetFPS = fps;
+                    fpsInputBuffer = fps.ToString();
+                    configTargetFPS.Value = TargetFPS;
+                    configCategory.SaveToFile();
+                    ApplyGraphicsSettings();
+                }
+                btnX += 50f;
+            }
+            y += 25f;
 
             // Shadows
             bool newShadows = GUI.Toggle(new Rect(startX, y, width, 20), DisableShadows, " Disable Shadows (FPS Boost)");
