@@ -386,12 +386,12 @@ namespace SpeedrunToolkitMod
             isPotatoMode = true;
             disabledLights.Clear();
 
-            // 1. Ограничения Камеры
+            // 1. Ограничения Камеры & Скайбокса
             if (Camera.main != null)
             {
                 Camera.main.clearFlags = CameraClearFlags.SolidColor;
                 Camera.main.backgroundColor = Color.black;
-                Camera.main.farClipPlane = 30f; // Обрезка 30м
+                Camera.main.farClipPlane = 30f;
             }
             RenderSettings.fog = false;
 
@@ -407,7 +407,7 @@ namespace SpeedrunToolkitMod
             QualitySettings.particleRaycastBudget = 0;
             QualitySettings.lodBias = 0.01f;
 
-            // 3. Выключаем точечный свет и запоминаем его
+            // 3. Отключение точечного света
             foreach (var light in UnityEngine.Object.FindObjectsOfType<Light>())
             {
                 if (light != null && light.enabled && (light.type == LightType.Point || light.type == LightType.Spot))
@@ -417,7 +417,11 @@ namespace SpeedrunToolkitMod
                 }
             }
 
-            // 4. Снятие лимита кадров
+            // 4. Зачистка частиц и принудительный Unlit-шейдер
+            AnnihilateParticles();
+            ApplyUnlitFlatShaders();
+
+            // 5. Снятие лимита кадров
             QualitySettings.vSyncCount = 0;
             QualitySettings.maxQueuedFrames = 0;
             Application.targetFrameRate = -1;
@@ -431,12 +435,12 @@ namespace SpeedrunToolkitMod
             if (Camera.main != null)
             {
                 Camera.main.clearFlags = CameraClearFlags.Skybox;
-                Camera.main.farClipPlane = 1000f; // Стандартная дальность рендера
+                Camera.main.farClipPlane = 1000f;
             }
             RenderSettings.fog = true;
 
             // 2. Восстанавливаем Качество
-            QualitySettings.masterTextureLimit = 0; // Максимальное разрешение текстур
+            QualitySettings.masterTextureLimit = 0;
             QualitySettings.pixelLightCount = 4;
             QualitySettings.antiAliasing = 2;
             QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
@@ -445,16 +449,19 @@ namespace SpeedrunToolkitMod
             QualitySettings.billboardsFaceCameraPosition = true;
             QualitySettings.softVegetation = true;
             QualitySettings.particleRaycastBudget = 4096;
-            QualitySettings.lodBias = 1.0f; // Обычные LOD-модели
+            QualitySettings.lodBias = 1.0f;
 
-            // 3. Включаем обратно сохраненный свет
+            // 3. Включаем обратно свет
             foreach (var light in disabledLights)
             {
                 if (light != null) light.enabled = true;
             }
             disabledLights.Clear();
 
-            // 4. Применяем твои пользовательские настройки из конфига (V-Sync, ПП и т.д.)
+            // 4. Восстанавливаем оригинальные материалы
+            RestoreOriginalShaders();
+
+            // 5. Применяем пользовательский конфиг
             ApplyGraphicsSettings();
         }
 
@@ -495,6 +502,77 @@ namespace SpeedrunToolkitMod
             Screen.SetResolution(originalWidth, originalHeight, FullScreenMode.FullScreenWindow);
         }
 
+        public void AnnihilateParticles()
+        {
+            foreach (var ps in UnityEngine.Object.FindObjectsOfType<ParticleSystem>())
+            {
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.gameObject.SetActive(false);
+            }
+        }
+
+        private System.Collections.Generic.Dictionary<Renderer, Material[]> savedOriginalMaterials
+    = new System.Collections.Generic.Dictionary<Renderer, Material[]>();
+
+        public void ApplyUnlitFlatShaders()
+        {
+            // Создаем самый примитивный шейдер без освещения
+            Material unlitMat = new Material(Shader.Find("Unlit/Color"));
+            unlitMat.color = new Color(0.6f, 0.6f, 0.6f);
+
+            foreach (var rend in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            {
+                // Строка 518: Простая и корректная проверка на системы частиц
+                if (rend == null || rend is ParticleSystemRenderer) continue;
+
+                // Сохраняем исходные материалы для возможности отмены
+                if (!savedOriginalMaterials.ContainsKey(rend))
+                {
+                    savedOriginalMaterials[rend] = rend.sharedMaterials;
+                }
+
+                Material[] flatArray = new Material[rend.sharedMaterials.Length];
+                for (int i = 0; i < flatArray.Length; i++)
+                {
+                    flatArray[i] = unlitMat;
+                }
+                rend.materials = flatArray;
+            }
+        }
+
+        public class WireframeController : MonoBehaviour
+        {
+            public static bool ShowWireframe = false;
+
+            void OnPreRender()
+            {
+                if (ShowWireframe) GL.wireframe = true;
+            }
+
+            void OnPostRender()
+            {
+                if (ShowWireframe) GL.wireframe = false;
+            }
+        }
+
+        public void RestoreOriginalShaders()
+        {
+            foreach (var pair in savedOriginalMaterials)
+            {
+                if (pair.Key != null)
+                {
+                    pair.Key.materials = pair.Value;
+                }
+            }
+            savedOriginalMaterials.Clear();
+        }
+
+        private bool derivesFromParticleRenderer(Renderer r) => r is ParticleSystemRenderer;
+
+        public void ToggleWireframe()
+        {
+            WireframeController.ShowWireframe = !WireframeController.ShowWireframe;
+        }
         public void NextSkybox()
         {
             EnsureSkyboxNamesLoaded();
@@ -601,8 +679,8 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-            // 3. Стандартные настройки графики
-            GUI.Label(new Rect(0, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
+        // 3. Стандартные настройки графики
+        GUI.Label(new Rect(0, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
             y += 24f;
 
             // Dark Mode

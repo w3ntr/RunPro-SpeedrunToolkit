@@ -100,6 +100,10 @@
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Il2CppAssemblies\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Il2CppAssemblies\UnityEngine.ParticleSystemModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Il2CppAssemblies\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
@@ -123,6 +127,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="TungTungLoader.cs" />
     <Compile Include="TimerModule.cs" />
     <Compile Include="TriggerVisualizer.cs" />
     <Compile Include="FixesModule.cs" />

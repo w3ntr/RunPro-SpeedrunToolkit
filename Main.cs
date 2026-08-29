@@ -1,8 +1,10 @@
 using Il2Cpp;
 using MelonLoader;
+using MelonLoader.Utils;
 using UnityEngine;
+using System.IO;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.3.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.5.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -86,6 +88,8 @@ namespace SpeedrunToolkitMod
         private MelonPreferences_Entry<bool> prefShowSpeed;
         private MelonPreferences_Entry<bool> prefShowCoords;
         private MelonPreferences_Entry<bool> prefHideNativeSpeedo;
+        public static MelonPreferences_Entry<bool> prefTungEnabled;
+        public static MelonPreferences_Entry<KeyCode> prefTungKey;
         private MelonPreferences_Entry<float> prefHudX;
         private MelonPreferences_Entry<float> prefHudY;
         private MelonPreferences_Entry<int> prefFontSize;
@@ -105,6 +109,15 @@ namespace SpeedrunToolkitMod
             prefRestartKey = prefCategory.CreateEntry("RestartKey", KeyCode.R);
             prefNextSlotKey = prefCategory.CreateEntry("NextSlotKey", KeyCode.PageDown);
             prefPrevSlotKey = prefCategory.CreateEntry("PrevSlotKey", KeyCode.PageUp);
+            prefTungEnabled = prefCategory.CreateEntry("TungEnabled", false);
+            prefTungKey = prefCategory.CreateEntry("TungKey", KeyCode.F7);
+
+            string toolkitFolder = Path.Combine(MelonEnvironment.UserDataDirectory, "SpeedrunToolkit");
+
+            if (!Directory.Exists(toolkitFolder))
+            {
+                Directory.CreateDirectory(toolkitFolder);
+            }
 
             prefHudEnabled = prefCategory.CreateEntry("HudEnabled", true);
             prefShowSpeed = prefCategory.CreateEntry("ShowSpeed", true);
@@ -187,6 +200,8 @@ namespace SpeedrunToolkitMod
             {
                 movementModule.Reset();
             }
+            // Задержка или вызов подмены после прогрузки карты
+            ApplyTungTungSkin();
         }
 
 
@@ -218,53 +233,87 @@ namespace SpeedrunToolkitMod
                 }
                 return;
             }
-
-            if (Input.GetKeyDown(menuKey))
             {
-                showMenu = !showMenu;
-                Cursor.lockState = showMenu ? CursorLockMode.None : CursorLockMode.Locked;
-                Cursor.visible = showMenu;
-                if (!showMenu) SaveConfig();
-            }
-
-            if (practiceModule != null)
-            {
-                if (Input.GetKeyDown(restartKey)) practiceModule.ResetCurrentCheckpoint();
-                if (Input.GetKeyDown(savePosKey)) practiceModule.SavePlayerPosition();
-                if (Input.GetKeyDown(loadPosKey)) practiceModule.LoadPlayerPosition();
-                if (Input.GetKeyDown(spawnPosKey)) practiceModule.TeleportToSpawn();
-                if (Input.GetKeyDown(nextSlotKey)) practiceModule.NextSlot();
-                if (Input.GetKeyDown(prevSlotKey)) practiceModule.PrevSlot();
-
-                if (Input.GetKeyDown(KeyCode.T)) practiceModule.TeleportToCrosshair();
-                if (Input.GetKeyDown(KeyCode.Keypad0)) practiceModule.ResetGravity();
-
-                practiceModule.Update();
-            }
-
-            if (Slomo != null) Slomo.OnUpdate();
-            if (speedoModule != null) speedoModule.Update();
-            if (fovModule != null) fovModule.Update();
-
-            if (movementModule != null)
-            {
-                if (Input.GetKeyDown(KeyCode.E))
+                // Нажатие F7 переключает видимость Тун Туна
+                if (Input.GetKeyDown(prefTungKey.Value))
                 {
-                    movementModule.PerformAirDash(practiceModule);
+                    prefTungEnabled.Value = !prefTungEnabled.Value;
+                    SaveConfig();
                 }
 
-                if (Input.GetKeyDown(KeyCode.Space))
+                GameObject player = GameObject.FindWithTag("Player");
+                if (player != null)
                 {
-                    movementModule.PerformAirJump(practiceModule);
+                    if (prefTungEnabled.Value)
+                    {
+                        // Если включен — создаем/включаем и анимируем
+                        if (TungTungLoader.tungObject == null)
+                        {
+                            TungTungLoader.SpawnTungTung(player.transform);
+                        }
+                        else if (!TungTungLoader.tungObject.activeSelf)
+                        {
+                            TungTungLoader.SetActive(true);
+                        }
+
+                        TungTungLoader.UpdateAnimation(player.transform);
+                    }
+                    else
+                    {
+                        // Если выключен — скрываем
+                        if (TungTungLoader.tungObject != null && TungTungLoader.tungObject.activeSelf)
+                        {
+                            TungTungLoader.SetActive(false);
+                        }
+                    }
                 }
 
-                movementModule.Update();
-                TrajectoryModule.Update();
-                // timerModule.OnUpdate();
-            }
+                if (Input.GetKeyDown(menuKey))
+                {
+                    showMenu = !showMenu;
+                    Cursor.lockState = showMenu ? CursorLockMode.None : CursorLockMode.Locked;
+                    Cursor.visible = showMenu;
+                    if (!showMenu) SaveConfig();
+                }
 
-            // Мгновенный респавн проверяется каждый кадр
-            HandleInstantRespawn();
+                if (practiceModule != null)
+                {
+                    if (Input.GetKeyDown(restartKey)) practiceModule.ResetCurrentCheckpoint();
+                    if (Input.GetKeyDown(savePosKey)) practiceModule.SavePlayerPosition();
+                    if (Input.GetKeyDown(loadPosKey)) practiceModule.LoadPlayerPosition();
+                    if (Input.GetKeyDown(spawnPosKey)) practiceModule.TeleportToSpawn();
+                    if (Input.GetKeyDown(nextSlotKey)) practiceModule.NextSlot();
+                    if (Input.GetKeyDown(prevSlotKey)) practiceModule.PrevSlot();
+
+                    if (Input.GetKeyDown(KeyCode.T)) practiceModule.TeleportToCrosshair();
+                    if (Input.GetKeyDown(KeyCode.Keypad0)) practiceModule.ResetGravity();
+
+                    practiceModule.Update();
+                }
+
+                if (Slomo != null) Slomo.OnUpdate();
+                if (speedoModule != null) speedoModule.Update();
+                if (fovModule != null) fovModule.Update();
+
+                if (movementModule != null)
+                {
+                    if (Input.GetKeyDown(KeyCode.E))
+                    {
+                        movementModule.PerformAirDash(practiceModule);
+                    }
+
+                    if (Input.GetKeyDown(KeyCode.Space))
+                    {
+                        movementModule.PerformAirJump(practiceModule);
+                    }
+
+                    movementModule.Update();
+                    TrajectoryModule.Update();
+                    // timerModule.OnUpdate();
+                }
+                // Мгновенный респавн проверяется каждый кадр
+                HandleInstantRespawn();
+            }
         }
 
         public override void OnFixedUpdate()
@@ -309,6 +358,40 @@ namespace SpeedrunToolkitMod
             prefCategory.SaveToFile();
         }
 
+        private void ApplyTungTungSkin()
+        {
+            // Ищем объект игрока по тегу или имени
+            GameObject player = GameObject.FindWithTag("Player");
+
+            // Если по тегу не находит, распечатаем лог для отладки
+            if (player == null)
+            {
+                MelonLogger.Warning(" Player isn't found!! Trying search by name...");
+                player = GameObject.Find("Player");
+            }
+
+            if (player != null)
+            {
+                // 1. Отключаем видимость родного меша
+                foreach (var rend in player.GetComponentsInChildren<Renderer>())
+                {
+                    rend.enabled = false;
+                }
+
+                // 2. Спавним Тун Туна
+                GameObject tung = TungTungLoader.SpawnTungTung(player.transform);
+
+                if (tung != null)
+                {
+                    MelonLogger.Msg("Tung Tung Tung Sahur was added!! 🗿🥁");
+                }
+                else
+                {
+                    MelonLogger.Error("Maybe there's no file of model in UserData/SpeedrunToolkit/ ? Or create folder");
+                }
+            }
+        }
+
         private void DrawSettingsMenu()
         {
             float menuWidth = 580f;
@@ -317,14 +400,14 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.3.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.5.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
             float contentWidth = menuWidth - 30f;
 
             // Добавлена вкладка "Fixes" (всего 11 вкладок)
-            string[] tabNames = new string[] { "Practice", "HUD", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Fix & QoL", "Slomo", "Info" };
+            string[] tabNames = new string[] { "Practice", "HUD & Model", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Fix & QoL", "Slomo", "Info" };
             int tabsPerRow = 5;
             float tabGap = 3f;
             float tabWidth = (contentWidth - (tabGap * (tabsPerRow - 1))) / tabsPerRow;
@@ -428,6 +511,8 @@ namespace SpeedrunToolkitMod
                 {
                     y = crosshairModule.DrawUI(x, y, contentWidth);
                 }
+                prefTungEnabled.Value = GUI.Toggle(new Rect(x, y, contentWidth, 20), prefTungEnabled.Value, " Enable Tung Tung Sahur Model");
+                y += 25;
             }
             else if (selectedTab == 2 && deathZoneModule != null)
             {

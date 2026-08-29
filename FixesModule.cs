@@ -116,8 +116,8 @@ namespace SpeedrunToolkitMod
 
             // --- HIGH-PRECISION TIMER SETTINGS ---
             // y += 10f;
-           // GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>High-Precision Timer</b>");
-           // y += 22f;
+            // GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>High-Precision Timer</b>");
+            // y += 22f;
 
             // Вызываем отрисовку интерфейса таймера
             // timerModule.DrawUI(x, y, contentWidth);
@@ -172,21 +172,33 @@ namespace SpeedrunToolkitMod
     }
 
     [HarmonyPatch(typeof(Booster), "OnTriggerEnter")]
+    [HarmonyPatch(typeof(Booster), "OnTriggerEnter")]
     public static class Booster_Patch
     {
+        private static float lastBoostTime = 0f;
+
         [HarmonyPrefix]
         public static bool Prefix(Booster __instance, Collider other)
         {
             if (!FixesModule.EnableBoosterFix) return true;
             FixesModule.CheckFinishAbuse();
 
+            // Кулдаун 0.15 сек, чтобы триггер не срабатывал несколько раз подряд
+            if (Time.time - lastBoostTime < 0.15f) return false;
+
             var controller = other.GetComponent<CharacterController>();
             var fakeForce = other.GetComponent<PlayerFakeForce>();
 
             if (controller != null && fakeForce != null)
             {
+                lastBoostTime = Time.time;
+
                 AudioSystem audio = Object.FindObjectOfType<AudioSystem>();
                 if (audio != null) audio.Play("booster");
+
+                // ВАЖНО: Слегка приподнимаем игрока над поверхностью (на 15 см), 
+                // чтобы сбросить isGrounded и не дать игре погасить горизонтальную скорость!
+                other.transform.position += Vector3.up * 0.15f;
 
                 Rigidbody rb = other.GetComponent<Rigidbody>();
                 if (rb != null) rb.velocity = Vector3.zero;
