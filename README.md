@@ -77,6 +77,7 @@
 | **Previous Checkpoint Slot** | `PageUp` | Practice Module |
 | **Teleport to Spawn** | `F11` | Practice Module |
 | **Reset Checkpoint & Respawn** | `R` | Practice Module |
+| **Teleport** | `T` | Practice Module |
 | **Air Dash** | `E` | Movement Tweaks |
 | **Infinite Jump** | `Space` | Movement Tweaks |
 | **Adjust Game Speed** | `Numpad +` / `Numpad -` | Slomo Module |
