@@ -55,7 +55,7 @@
 * **Anti-Abuse Verification:** Automatically invalidates and disables level completion triggers if physics constants exceed non-standard values.
 
 ### Audio and Custom Music Replacer
-* **Independent Audio Stream:** Custom audio manager running on a separate interface layer.
+* **Independent Audio Stream:** Custom audio manager running on a separate interface layer (.mp3, .wav).
 * **Playback Utilities:** Automatic track scanning from directory, real-time volume management, playback speed/pitch adjustment (0.50x - 2.00x), and playback modes (Sequential, Shuffle, Loop).
 
 ### Time Dilation (Slomo)
