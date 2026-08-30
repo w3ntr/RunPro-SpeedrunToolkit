@@ -140,7 +140,7 @@ Run Pro/
 
 3. Place SpeedrunToolkit.dll into the Run Pro/Mods/ folder.
 
-4. (Optional) Place custom audio assets (.wav) in UserData/SpeedrunToolkit/CustomMusic/.
+4. (Optional) Place custom audio assets (.wav or .mp3) in UserData/SpeedrunToolkit/CustomMusic/.
 
 5. (Optional) Place custom mesh assets (tungtung.obj, tungtung.png) in UserData/SpeedrunToolkit/.
 
