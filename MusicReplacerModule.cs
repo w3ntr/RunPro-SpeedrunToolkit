@@ -1,5 +1,11 @@
-﻿using MelonLoader;
+﻿using Il2Cpp;
+using Il2CppInterop.Runtime;
+using MelonLoader;
+using Harmony;
 using MelonLoader.Utils;
+using NLayer;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -10,13 +16,14 @@ namespace SpeedrunToolkitMod
     {
         public enum ReplaceMode
         {
-            ByName = 0,         // По совпадению имен файлов
-            SelectedTrack = 1,  // Любая музыка игры заменяется на выбранный трек
-            Shuffle = 2         // Случайный кастомный трек при смене музыки
+            ByName = 0,
+            SelectedTrack = 1,
+            Shuffle = 2
         }
 
         public bool EnableMusicReplacer = true;
         public ReplaceMode Mode = ReplaceMode.SelectedTrack;
+        public static MusicReplacerModule Instance;
         public float MasterVolume = 1.0f;
         public string SelectedTrackName = "";
         public float PitchMultiplier = 1.0f;
@@ -35,24 +42,26 @@ namespace SpeedrunToolkitMod
         private MelonPreferences_Entry<float> configPitch;
 
         private float checkTimer = 0f;
-        private float dumpTimer = 0f; // Отдельный таймер для редкого сканирования клипов в файл
+        private float dumpTimer = 0f;
         private string lastReplacedTrack = "None";
         private Vector2 scrollPosition = Vector2.zero;
+        private Vector2 outerScrollPosition = Vector2.zero;
 
         public void Init()
         {
             configCategory = MelonPreferences.CreateCategory("MusicReplacerMod", "Custom Music Settings");
             configEnable = configCategory.CreateEntry("EnableMusicReplacer", true, "Enable Custom Music");
-            configMode = configCategory.CreateEntry("ReplaceMode", (int)ReplaceMode.SelectedTrack, "Replace Mode (0=ByName, 1=Selected, 2=Shuffle)");
+            configMode = configCategory.CreateEntry("ReplaceMode", (int)ReplaceMode.SelectedTrack, "Replace Mode");
             configVolume = configCategory.CreateEntry("MasterVolume", 1.0f, "Music Volume");
             configSelectedTrack = configCategory.CreateEntry("SelectedTrackName", "", "Selected Track Name");
+            configPitch = configCategory.CreateEntry("PitchMultiplier", 1.0f, "Music Speed & Pitch");
 
             EnableMusicReplacer = configEnable.Value;
             Mode = (ReplaceMode)configMode.Value;
             MasterVolume = configVolume.Value;
-            configPitch = configCategory.CreateEntry("PitchMultiplier", 1.0f, "Music Speed & Pitch");
             PitchMultiplier = configPitch.Value;
             SelectedTrackName = configSelectedTrack.Value;
+            Instance = this;
 
             musicFolder = Path.Combine(MelonEnvironment.UserDataDirectory, "CustomMusic");
             if (!Directory.Exists(musicFolder))
@@ -61,9 +70,11 @@ namespace SpeedrunToolkitMod
             }
 
             listFilePath = Path.Combine(musicFolder, "music_tracks_list.txt");
-            LoadAllCustomWavs();
 
-            MelonLogger.Msg("[MusicReplacerModule] Initialized.");
+            // Загружаем все треки при старте
+            LoadAllCustomMusic();
+
+            MelonLogger.Msg("[MusicReplacerModule] Initialized successfully with MP3 support!");
         }
 
         public void OnUpdate()
@@ -72,7 +83,6 @@ namespace SpeedrunToolkitMod
 
             float dt = Time.deltaTime;
 
-            // Проверка музыки теперь происходит 4 раза в секунду вместо 20 (убирает микрофризы)
             checkTimer += dt;
             if (checkTimer >= 0.25f)
             {
@@ -80,7 +90,6 @@ namespace SpeedrunToolkitMod
                 EnforceCustomMusic();
             }
 
-            // Сканирование треков для текстового файла происходит раз в 3 секунды, не нагружая игру
             dumpTimer += dt;
             if (dumpTimer >= 3.0f)
             {
@@ -88,22 +97,56 @@ namespace SpeedrunToolkitMod
                 DumpMusicTracks();
             }
         }
-
-        public void LoadAllCustomWavs()
+        public void Update()
         {
-            string[] files = Directory.GetFiles(musicFolder, "*.wav");
-            foreach (var file in files)
+            if (!EnableMusicReplacer || string.IsNullOrEmpty(lastReplacedTrack)) return;
+
+            foreach (var radioNowPlaying in UnityEngine.Object.FindObjectsOfType<RadioNowPlaying>())
             {
-                string nameWithoutExt = Path.GetFileNameWithoutExtension(file);
-                if (!customClips.ContainsKey(nameWithoutExt))
+                if (radioNowPlaying != null && radioNowPlaying.gameObject.activeInHierarchy && radioNowPlaying.musicName != null)
                 {
-                    AudioClip clip = LoadWavFromFile(file, nameWithoutExt);
+                    if (radioNowPlaying.musicName.text != lastReplacedTrack)
+                    {
+                        radioNowPlaying.musicName.text = lastReplacedTrack;
+                        radioNowPlaying.musicName.resizeTextForBestFit = true;
+                        radioNowPlaying.musicName.resizeTextMinSize = 10;
+                        radioNowPlaying.musicName.resizeTextMaxSize = 24;
+                    }
+                }
+            }
+        }
+
+        public void LoadAllCustomMusic()
+        {
+            string[] mp3Files = Directory.GetFiles(musicFolder, "*.mp3");
+            string[] wavFiles = Directory.GetFiles(musicFolder, "*.wav");
+
+            foreach (var filePath in mp3Files)
+            {
+                string clipName = Path.GetFileNameWithoutExtension(filePath);
+                if (!customClips.ContainsKey(clipName))
+                {
+                    AudioClip clip = LoadMp3File(filePath, clipName);
                     if (clip != null)
                     {
-                        clip.hideFlags = HideFlags.DontUnloadUnusedAsset;
-                        customClips[nameWithoutExt] = clip;
-                        customClipNames.Add(nameWithoutExt);
-                        MelonLogger.Msg($"[MusicReplacer] Loaded custom track: {nameWithoutExt}");
+                        customClips[clipName] = clip;
+                        if (!customClipNames.Contains(clipName)) customClipNames.Add(clipName);
+                        MelonLogger.Msg($"[MusicReplacer] Loaded MP3: {clipName}");
+                    }
+                }
+            }
+
+            foreach (var filePath in wavFiles)
+            {
+                string clipName = Path.GetFileNameWithoutExtension(filePath);
+                if (!customClips.ContainsKey(clipName))
+                {
+                    AudioClip clip = LoadWavFile(filePath, clipName);
+                    if (clip != null)
+                    {
+                        customClips[clipName] = clip;
+                        if (!customClipNames.Contains(clipName)) customClipNames.Add(clipName);
+                        MelonLogger.Msg($"[MusicReplacer] Loaded WAV: {clipName}");
                     }
                 }
             }
@@ -111,6 +154,93 @@ namespace SpeedrunToolkitMod
             if (string.IsNullOrEmpty(SelectedTrackName) && customClipNames.Count > 0)
             {
                 SelectedTrackName = customClipNames[0];
+            }
+        }
+
+        // Декодер MP3 через NLayer в PCM-сэмплы Unity
+        private AudioClip LoadMp3File(string filePath, string clipName)
+        {
+            try
+            {
+                using (var mpegFile = new MpegFile(filePath))
+                {
+                    int sampleRate = mpegFile.SampleRate;
+                    int channels = mpegFile.Channels;
+
+                    List<float> sampleList = new List<float>();
+                    float[] readBuffer = new float[1024 * 16];
+                    int readCount;
+
+                    while ((readCount = mpegFile.ReadSamples(readBuffer, 0, readBuffer.Length)) > 0)
+                    {
+                        for (int i = 0; i < readCount; i++)
+                        {
+                            sampleList.Add(readBuffer[i]);
+                        }
+                    }
+
+                    if (sampleList.Count == 0) return null;
+
+                    float[] samples = sampleList.ToArray();
+                    int totalFrames = samples.Length / channels;
+
+                    AudioClip clip = AudioClip.Create(clipName, totalFrames, channels, sampleRate, false);
+                    clip.SetData(samples, 0);
+                    clip.hideFlags = HideFlags.DontUnloadUnusedAsset;
+
+                    return clip;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[MusicReplacer] Error reading MP3 '{clipName}': {ex.Message}");
+                return null;
+            }
+        }
+
+        // Простой считыватель WAV 16-bit
+        private AudioClip LoadWavFile(string filePath, string clipName)
+        {
+            try
+            {
+                byte[] fileBytes = File.ReadAllBytes(filePath);
+                int channels = fileBytes[22];
+                int sampleRate = BitConverter.ToInt32(fileBytes, 24);
+                int pos = 12;
+
+                while (pos < fileBytes.Length - 8)
+                {
+                    if (fileBytes[pos] == 'd' && fileBytes[pos + 1] == 'a' && fileBytes[pos + 2] == 't' && fileBytes[pos + 3] == 'a')
+                    {
+                        pos += 4;
+                        break;
+                    }
+                    pos++;
+                }
+
+                int dataSize = BitConverter.ToInt32(fileBytes, pos);
+                pos += 4;
+
+                int sampleCount = dataSize / 2;
+                float[] samples = new float[sampleCount];
+
+                for (int i = 0; i < sampleCount; i++)
+                {
+                    short sample16 = BitConverter.ToInt16(fileBytes, pos + i * 2);
+                    samples[i] = sample16 / 32768.0f;
+                }
+
+                int totalFrames = sampleCount / channels;
+                AudioClip clip = AudioClip.Create(clipName, totalFrames, channels, sampleRate, false);
+                clip.SetData(samples, 0);
+                clip.hideFlags = HideFlags.DontUnloadUnusedAsset;
+
+                return clip;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[MusicReplacer] Error reading WAV '{clipName}': {ex.Message}");
+                return null;
             }
         }
 
@@ -145,6 +275,9 @@ namespace SpeedrunToolkitMod
                         }
                         lastReplacedTrack = targetClip.name;
                         MelonLogger.Msg($"[MusicReplacer] Replaced game music with '{targetClip.name}'");
+
+                        // Вызываем обновление плашки сразу при автоматической замене трека
+                        UpdateInGameHUDTrackName(targetClip.name);
                     }
                 }
             }
@@ -167,7 +300,7 @@ namespace SpeedrunToolkitMod
             }
             else if (Mode == ReplaceMode.Shuffle)
             {
-                int randomIndex = Random.Range(0, customClipNames.Count);
+                int randomIndex = UnityEngine.Random.Range(0, customClipNames.Count);
                 return customClips[customClipNames[randomIndex]];
             }
 
@@ -192,6 +325,9 @@ namespace SpeedrunToolkitMod
                     source.Play();
                     lastReplacedTrack = songName;
                     MelonLogger.Msg($"[MusicReplacer] Force playing: '{songName}'");
+
+                    // Перенесли вызов внутрь условия успешного воспроизведения
+                    UpdateInGameHUDTrackName(songName);
                     break;
                 }
             }
@@ -218,7 +354,7 @@ namespace SpeedrunToolkitMod
                 List<string> lines = new List<string>
                 {
                     "=== DISCOVERED GAME MUSIC TRACKS ===",
-                    "Name your .wav files as listed below (if using ByName mode):",
+                    "Name your .mp3 / .wav files as listed below (if using ByName mode. THATS OLD CODE, DON'T CARE ABOUT THAT. Name your .mp3 how u want, it's doesn't matter!):",
                     "------------------------------------------------"
                 };
 
@@ -231,14 +367,73 @@ namespace SpeedrunToolkitMod
             }
         }
 
+        private void UpdateInGameHUDTrackName(string newSongName)
+        {
+            try
+            {
+                // 1. Меняем название прямо в памяти игры (чтобы игра сама использовала твое имя)
+                if (RadioSystem.i != null && RadioSystem.i.listSounds != null)
+                {
+                    int activeId = RadioSystem.i.activeMusicID;
+                    if (activeId >= 0 && activeId < RadioSystem.i.listSounds.Length)
+                    {
+                        RadioSystem.i.listSounds[activeId].soundName = newSongName;
+                    }
+                }
+
+                // 2. Ищем саму плашку "Now Playing" по скрипту RadioNowPlaying
+                foreach (var radioNowPlaying in UnityEngine.Object.FindObjectsOfType<RadioNowPlaying>())
+                {
+                    if (radioNowPlaying != null && radioNowPlaying.musicName != null)
+                    {
+                        radioNowPlaying.musicName.text = newSongName;
+                        radioNowPlaying.musicName.resizeTextForBestFit = true;
+                        radioNowPlaying.musicName.resizeTextMinSize = 10;
+                        radioNowPlaying.musicName.resizeTextMaxSize = 24;
+                    }
+                }
+
+                // 3. Ищем радио-холст RadioCanvas и форсируем обновление
+                foreach (var radioCanvas in UnityEngine.Object.FindObjectsOfType<RadioCanvas>())
+                {
+                    if (radioCanvas != null)
+                    {
+                        if (radioCanvas.nowPlayingText != null)
+                        {
+                            radioCanvas.nowPlayingText.text = newSongName;
+                            radioCanvas.nowPlayingText.resizeTextForBestFit = true;
+                            radioCanvas.nowPlayingText.resizeTextMinSize = 10;
+                            radioCanvas.nowPlayingText.resizeTextMaxSize = 24;
+                        }
+                        // Просим саму игру перезапустить логику вывода имени
+                        radioCanvas.NowPlayingName();
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                MelonLogger.Warning($"[MusicReplacer] Could not update RadioNowPlaying text: {ex.Message}");
+            }
+        }
+
+
+
         public float DrawUI(float startX, float startY, float width)
         {
-            float y = startY;
+            // Фиксируем общую высоту окна на 310f, чтобы не залезать на нижнюю панель
+            outerScrollPosition = GUI.BeginScrollView(
+                new Rect(startX, startY, width, 310f),
+                outerScrollPosition,
+                new Rect(0, 0, width - 25f, 520f)
+            );
 
-            GUI.Label(new Rect(startX, y, width, 20), "<b>Custom Music Replacer Settings:</b>");
+            float y = 5f;
+            float contentWidth = width - 25f;
+
+            GUI.Label(new Rect(0, y, contentWidth, 20), "<b>Custom Music Replacer Settings:</b>");
             y += 24f;
 
-            bool newEnable = GUI.Toggle(new Rect(startX, y, width, 20), EnableMusicReplacer, " Enable Music Replacer");
+            bool newEnable = GUI.Toggle(new Rect(0, y, contentWidth, 20), EnableMusicReplacer, " Enable Music Replacer");
             if (newEnable != EnableMusicReplacer)
             {
                 EnableMusicReplacer = newEnable;
@@ -247,12 +442,15 @@ namespace SpeedrunToolkitMod
             }
             y += 25f;
 
-            if (!EnableMusicReplacer) return y;
+            if (!EnableMusicReplacer)
+            {
+                GUI.EndScrollView();
+                return 310f;
+            }
 
-            // Volume
-            GUI.Label(new Rect(startX, y, width, 18), $"Volume: {(int)(MasterVolume * 100)}%");
+            GUI.Label(new Rect(0, y, contentWidth, 18), $"Volume: {(int)(MasterVolume * 100)}%");
             y += 20f;
-            float newVol = GUI.HorizontalSlider(new Rect(startX, y, width, 16), MasterVolume, 0f, 1f);
+            float newVol = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 16), MasterVolume, 0f, 1f);
             if (Mathf.Abs(newVol - MasterVolume) > 0.01f)
             {
                 MasterVolume = newVol;
@@ -261,10 +459,9 @@ namespace SpeedrunToolkitMod
             }
             y += 24f;
 
-            // Speed & Pitch (Slowed / Speed Up)
-            GUI.Label(new Rect(startX, y, width, 18), $"Speed & Pitch: {PitchMultiplier:F2}x");
+            GUI.Label(new Rect(0, y, contentWidth, 18), $"Speed & Pitch: {PitchMultiplier:F2}x");
             y += 20f;
-            float newPitch = GUI.HorizontalSlider(new Rect(startX, y, width, 16), PitchMultiplier, 0.5f, 2.0f);
+            float newPitch = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 16), PitchMultiplier, 0.5f, 2.0f);
             if (Mathf.Abs(newPitch - PitchMultiplier) > 0.01f)
             {
                 PitchMultiplier = newPitch;
@@ -274,47 +471,45 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-            // Mode Selector
-            GUI.Label(new Rect(startX, y, width, 18), $"Mode: <b>{Mode}</b>");
+            GUI.Label(new Rect(0, y, contentWidth, 18), $"Mode: <b>{Mode}</b>");
             y += 20f;
-            float btnWidth = (width - 10f) / 3f;
-            if (GUI.Button(new Rect(startX, y, btnWidth, 22), "Selected")) { Mode = ReplaceMode.SelectedTrack; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
-            if (GUI.Button(new Rect(startX + btnWidth + 5f, y, btnWidth, 22), "By Name")) { Mode = ReplaceMode.ByName; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
-            if (GUI.Button(new Rect(startX + (btnWidth + 5f) * 2f, y, btnWidth, 22), "Shuffle")) { Mode = ReplaceMode.Shuffle; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
+            float btnWidth = (contentWidth - 10f) / 3f;
+            if (GUI.Button(new Rect(0, y, btnWidth, 22), "Selected")) { Mode = ReplaceMode.SelectedTrack; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
+            if (GUI.Button(new Rect(btnWidth + 5f, y, btnWidth, 22), "By Name")) { Mode = ReplaceMode.ByName; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
+            if (GUI.Button(new Rect((btnWidth + 5f) * 2f, y, btnWidth, 22), "Shuffle")) { Mode = ReplaceMode.Shuffle; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
             y += 30f;
 
-            // Статус трека
-            GUI.Label(new Rect(startX, y, width, 18), $"Playing: <i>{lastReplacedTrack}</i> | Loaded WAVs: {customClipNames.Count}");
+            GUI.Label(new Rect(0, y, contentWidth, 18), $"Playing: <i>{lastReplacedTrack}</i> | Loaded Tracks: {customClipNames.Count}");
             y += 24f;
 
-            // Блок для списка песен
-            float boxHeight = 200f;
-            GUI.Box(new Rect(startX, y, width, boxHeight), "Available Custom Songs");
-            Rect scrollOuterRect = new Rect(startX + 5, y + 22, width - 10, boxHeight - 28);
-            float contentHeight = Mathf.Max(boxHeight - 28, customClipNames.Count * 24);
-            Rect scrollContentRect = new Rect(0, 0, width - 28, contentHeight);
+            // Внутренний скролл-бокс для списка файлов
+            float boxHeight = 180f;
+            GUI.Box(new Rect(0, y, contentWidth, boxHeight), "Available Custom Songs (.mp3 / .wav)");
+            Rect scrollOuterRect = new Rect(5, y + 22, contentWidth - 10, boxHeight - 28);
+            float innerHeight = Mathf.Max(boxHeight - 28, customClipNames.Count * 24);
+            Rect scrollContentRect = new Rect(0, 0, contentWidth - 28, innerHeight);
 
             scrollPosition = GUI.BeginScrollView(scrollOuterRect, scrollPosition, scrollContentRect);
 
             for (int i = 0; i < customClipNames.Count; i++)
             {
                 string songName = customClipNames[i];
-                int maxChars = Mathf.Max(15, (int)((width - 130) / 7.5f));
+                int maxChars = Mathf.Max(12, (int)((contentWidth - 130) / 7.5f));
                 string displayName = songName.Length > maxChars ? songName.Substring(0, maxChars - 3) + "..." : songName;
 
                 float itemY = i * 24;
                 bool isSelected = (songName == SelectedTrackName);
 
-                GUI.Label(new Rect(5, itemY + 2, width - 130, 20), isSelected ? $"<b>> {displayName}</b>" : displayName);
+                GUI.Label(new Rect(5, itemY + 2, contentWidth - 130, 20), isSelected ? $"<b>> {displayName}</b>" : displayName);
 
-                if (GUI.Button(new Rect(width - 115, itemY, 50, 20), "Select"))
+                if (GUI.Button(new Rect(contentWidth - 115, itemY, 50, 20), "Select"))
                 {
                     SelectedTrackName = songName;
                     configSelectedTrack.Value = SelectedTrackName;
                     configCategory.SaveToFile();
                 }
 
-                if (GUI.Button(new Rect(width - 60, itemY, 45, 20), "Play"))
+                if (GUI.Button(new Rect(contentWidth - 60, itemY, 45, 20), "Play"))
                 {
                     SelectedTrackName = songName;
                     configSelectedTrack.Value = SelectedTrackName;
@@ -326,77 +521,14 @@ namespace SpeedrunToolkitMod
             GUI.EndScrollView();
             y += boxHeight + 10f;
 
-            if (GUI.Button(new Rect(startX, y, width, 24), "Rescan CustomMusic Folder"))
+            if (GUI.Button(new Rect(0, y, contentWidth, 24), "Rescan CustomMusic Folder"))
             {
-                LoadAllCustomWavs();
+                LoadAllCustomMusic();
             }
-            y += 28f;
+            y += 30f;
 
-            return y;
-        }
-
-        private AudioClip LoadWavFromFile(string filePath, string clipName)
-        {
-            try
-            {
-                byte[] fileBytes = File.ReadAllBytes(filePath);
-
-                int channels = System.BitConverter.ToInt16(fileBytes, 22);
-                int frequency = System.BitConverter.ToInt32(fileBytes, 24);
-                int bitsPerSample = System.BitConverter.ToInt16(fileBytes, 34);
-
-                int pos = 12;
-                while (pos < fileBytes.Length - 4)
-                {
-                    if (fileBytes[pos] == 'd' && fileBytes[pos + 1] == 'a' && fileBytes[pos + 2] == 't' && fileBytes[pos + 3] == 'a')
-                    {
-                        pos += 4;
-                        break;
-                    }
-                    pos++;
-                }
-
-                int dataSize = System.BitConverter.ToInt32(fileBytes, pos);
-                pos += 4;
-
-                int totalSamples = dataSize / (bitsPerSample / 8);
-                int samplesPerChannel = totalSamples / channels;
-
-                float[] sampleData = new float[totalSamples];
-
-                if (bitsPerSample == 16)
-                {
-                    for (int i = 0; i < totalSamples; i++)
-                    {
-                        short sample = System.BitConverter.ToInt16(fileBytes, pos + i * 2);
-                        sampleData[i] = sample / 32768f;
-                    }
-                }
-                else if (bitsPerSample == 8)
-                {
-                    for (int i = 0; i < totalSamples; i++)
-                    {
-                        byte sample = fileBytes[pos + i];
-                        sampleData[i] = (sample - 128) / 128f;
-                    }
-                }
-                else if (bitsPerSample == 32)
-                {
-                    for (int i = 0; i < totalSamples; i++)
-                    {
-                        sampleData[i] = System.BitConverter.ToSingle(fileBytes, pos + i * 4);
-                    }
-                }
-
-                AudioClip audioClip = AudioClip.Create(clipName, samplesPerChannel, channels, frequency, false);
-                audioClip.SetData(sampleData, 0);
-                return audioClip;
-            }
-            catch (System.Exception ex)
-            {
-                MelonLogger.Error($"[MusicReplacer] WAV load error ({clipName}): {ex.Message}");
-                return null;
-            }
+            GUI.EndScrollView();
+            return 310f;
         }
 
         private void UpdateAllSourcesPitch()

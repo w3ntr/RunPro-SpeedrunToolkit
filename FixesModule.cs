@@ -8,6 +8,7 @@ namespace SpeedrunToolkitMod
     {
         public static bool EnableJumperFix = true;
         public static bool EnableBoosterFix = true;
+        public static bool EnableLedgeFix = true;
 
         public static float JumperForceMultiplier = 1.025f;
         public static float BoosterForceMultiplier = 1.00f;
@@ -15,7 +16,6 @@ namespace SpeedrunToolkitMod
         public const float MinSafeLimit = 1.00f;
         public const float MaxSafeLimit = 1.025f;
 
-        // Создаем экземпляр модуля таймера
         private TimerModule timerModule = new TimerModule();
 
         public void OnUpdate()
@@ -113,14 +113,6 @@ namespace SpeedrunToolkitMod
                 " Instant Respawn on Death (EXPERIMENTAL)"
             );
             y += 25f;
-
-            // --- HIGH-PRECISION TIMER SETTINGS ---
-            // y += 10f;
-            // GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>High-Precision Timer</b>");
-            // y += 22f;
-
-            // Вызываем отрисовку интерфейса таймера
-            // timerModule.DrawUI(x, y, contentWidth);
         }
 
         public static void CheckFinishAbuse()
@@ -141,6 +133,46 @@ namespace SpeedrunToolkitMod
         }
     }
 
+    // --- ФИКС ТОНКИХ БЛОКОВ И КРАЕВ ---
+    [HarmonyPatch(typeof(FirstPersonController), "Start")]
+    public static class ControllerSetup_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(FirstPersonController __instance)
+        {
+            if (__instance.m_CharacterController != null)
+            {
+                __instance.m_CharacterController.skinWidth = 0.005f;
+                __instance.m_CharacterController.minMoveDistance = 0f;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(FirstPersonController), "FixedUpdate")]
+    public static class ThinEdgeFix_Patch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(FirstPersonController __instance)
+        {
+            if (!FixesModule.EnableLedgeFix) return;
+
+            var controller = __instance.m_CharacterController;
+            if (controller == null) return;
+
+            Vector3 origin = __instance.transform.position;
+            float checkDistance = (controller.height / 2f) + 0.1f;
+
+            if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, checkDistance))
+            {
+                if (hit.normal.y > 0.5f)
+                {
+                    controller.stepOffset = 0.3f;
+                }
+            }
+        }
+    }
+
+    // --- ПАТЧ ДЖАМПЕРОВ ---
     [HarmonyPatch(typeof(Jumpbox), "OnTriggerEnter")]
     public static class Jumpbox_Patch
     {
@@ -171,7 +203,7 @@ namespace SpeedrunToolkitMod
         }
     }
 
-    [HarmonyPatch(typeof(Booster), "OnTriggerEnter")]
+    // --- ИСПРАВЛЕННЫЙ ПАТЧ БУСТЕРОВ ---
     [HarmonyPatch(typeof(Booster), "OnTriggerEnter")]
     public static class Booster_Patch
     {
@@ -183,9 +215,9 @@ namespace SpeedrunToolkitMod
             if (!FixesModule.EnableBoosterFix) return true;
             FixesModule.CheckFinishAbuse();
 
-            // Кулдаун 0.15 сек, чтобы триггер не срабатывал несколько раз подряд
             if (Time.time - lastBoostTime < 0.15f) return false;
 
+            var fps = other.GetComponent<FirstPersonController>();
             var controller = other.GetComponent<CharacterController>();
             var fakeForce = other.GetComponent<PlayerFakeForce>();
 
@@ -196,13 +228,18 @@ namespace SpeedrunToolkitMod
                 AudioSystem audio = Object.FindObjectOfType<AudioSystem>();
                 if (audio != null) audio.Play("booster");
 
-                // ВАЖНО: Слегка приподнимаем игрока над поверхностью (на 15 см), 
-                // чтобы сбросить isGrounded и не дать игре погасить горизонтальную скорость!
-                other.transform.position += Vector3.up * 0.15f;
+                // 1. Принудительно отключаем прижатие к земле в FPS-контроллере
+                if (fps != null)
+                {
+                    fps.cancelGroundForce = true;
+                    fps.m_Jumping = true;
+                    fps.m_PreviouslyGrounded = false;
+                }
 
-                Rigidbody rb = other.GetComponent<Rigidbody>();
-                if (rb != null) rb.velocity = Vector3.zero;
+                // 2. Сдвигаем контроллер штатным методом CharacterController
+                controller.Move(Vector3.up * __instance.jumpOffset);
 
+                // 3. Применяем силы с учетом ползунка BoosterForceMultiplier
                 fakeForce.SetFakeForce(
                     __instance.forwardForce * FixesModule.BoosterForceMultiplier,
                     __instance.jumpForce * FixesModule.BoosterForceMultiplier,

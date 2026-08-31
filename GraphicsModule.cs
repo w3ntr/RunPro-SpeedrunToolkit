@@ -5,29 +5,35 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.PostProcessing;
-using UnityEngine.UI.Extensions;
 
 namespace SpeedrunToolkitMod
 {
     public class GraphicsModule
     {
-        // Сохраняем исходное разрешение монитора при старте
         private int originalWidth = Screen.width;
         private int originalHeight = Screen.height;
         private Vector2 scrollPosition = Vector2.zero;
         private bool isPotatoMode = false;
-        private System.Collections.Generic.List<Light> disabledLights = new System.Collections.Generic.List<Light>();
+        private List<Light> disabledLights = new List<Light>();
+
+        // Кэш для надежного восстановления исходных материалов карты
+        private Dictionary<Renderer, Material[]> savedOriginalMaterials = new Dictionary<Renderer, Material[]>();
+
         public bool DisablePostProcessing = false;
         public bool DisableVSync = false;
-        public int TargetFPS = -1; // -1 означает "Без ограничений" (Uncapped)
+
+        // Чистый C# каллер без MonoBehaviour для совместимости с IL2CPP
+        private DistanceCuller cullerComponent = new DistanceCuller();
+
+        public int TargetFPS = -1;
         private MelonPreferences_Entry<int> configTargetFPS;
 
-        private string fpsInputBuffer = "-1"; // Буфер для текстового поля UI
+        private string fpsInputBuffer = "-1";
         private MelonPreferences_Entry<bool> configDisableVSync;
         public bool DisableShadows = false;
         public bool HideHands = false;
         public bool HideGameHUD = false;
-        public int TextureQuality = 0; // 0 = High, 1 = Medium, 2 = Low
+        public int TextureQuality = 0;
 
         // Dark Mode
         public bool EnableDarkMode = false;
@@ -44,11 +50,6 @@ namespace SpeedrunToolkitMod
         private List<string> customImageFiles = new List<string>();
         private Dictionary<string, Material> customMaterialsCache = new Dictionary<string, Material>();
 
-        // Index system:
-        // 0 = Map Default
-        // 1 .. nativeCount = Native Skyboxes
-        // nativeCount + 1 = Solid Black
-        // nativeCount + 2 .. N = Custom Images
         public int CurrentSkyboxIndex = 0;
 
         // Distance Settings
@@ -110,6 +111,11 @@ namespace SpeedrunToolkitMod
             ScanCustomSkyboxes();
 
             MelonLogger.Msg("[Graphics] Module initialized.");
+        }
+
+        public void OnUpdate()
+        {
+            cullerComponent?.Update();
         }
 
         private void EnsureCustomFolderExists()
@@ -181,7 +187,6 @@ namespace SpeedrunToolkitMod
 
                 Shader targetShader = null;
 
-                // 1. Ищем панорамный шейдер в памяти игры среди всех загруженных
                 var allShaders = Resources.FindObjectsOfTypeAll<Shader>();
                 foreach (var s in allShaders)
                 {
@@ -192,7 +197,6 @@ namespace SpeedrunToolkitMod
                     }
                 }
 
-                // 2. Стандартные попытки поиска
                 if (targetShader == null) targetShader = Shader.Find("Skybox/Panoramic");
 
                 bool is6Sided = false;
@@ -213,7 +217,6 @@ namespace SpeedrunToolkitMod
 
                     if (is6Sided)
                     {
-                        // Заполняем все 6 граней картинкой, чтобы Skybox/6 Sided её отрисовал
                         mat.SetTexture("_FrontTex", tex);
                         mat.SetTexture("_BackTex", tex);
                         mat.SetTexture("_LeftTex", tex);
@@ -275,18 +278,17 @@ namespace SpeedrunToolkitMod
 
             QualitySettings.shadows = DisableShadows ? ShadowQuality.Disable : ShadowQuality.All;
 
-            // 0 = V-Sync отключен, 1 = включен (60/144 FPS)
             QualitySettings.vSyncCount = DisableVSync ? 0 : 1;
 
             if (DisableVSync)
             {
                 QualitySettings.vSyncCount = 0;
-                Application.targetFrameRate = TargetFPS; // Применяем наш лимит
+                Application.targetFrameRate = TargetFPS;
             }
             else
             {
                 QualitySettings.vSyncCount = 1;
-                Application.targetFrameRate = -1; // Если V-Sync включен, отдаем управление ему
+                Application.targetFrameRate = -1;
             }
 
             if (EnableCustomShadowDistance)
@@ -315,19 +317,19 @@ namespace SpeedrunToolkitMod
             int nativeCount = availableSkyboxNames.Count;
             int idxBlack = nativeCount + 1;
 
-            if (CurrentSkyboxIndex == 0) // Map Default
+            if (CurrentSkyboxIndex == 0)
             {
                 if (mainCam != null) mainCam.clearFlags = CameraClearFlags.Skybox;
                 if (originalSkyboxMaterial != null) RenderSettings.skybox = originalSkyboxMaterial;
             }
-            else if (CurrentSkyboxIndex >= 1 && CurrentSkyboxIndex <= nativeCount) // Native
+            else if (CurrentSkyboxIndex >= 1 && CurrentSkyboxIndex <= nativeCount)
             {
                 if (mainCam != null) mainCam.clearFlags = CameraClearFlags.Skybox;
                 string skyName = availableSkyboxNames[CurrentSkyboxIndex - 1];
                 Material loadedMat = Resources.Load<Material>("Skyboxes/" + skyName);
                 if (loadedMat != null) RenderSettings.skybox = loadedMat;
             }
-            else if (CurrentSkyboxIndex == idxBlack) // Solid Black
+            else if (CurrentSkyboxIndex == idxBlack)
             {
                 if (mainCam != null)
                 {
@@ -336,7 +338,7 @@ namespace SpeedrunToolkitMod
                 }
                 RenderSettings.skybox = null;
             }
-            else // Custom Images
+            else
             {
                 int customIdx = CurrentSkyboxIndex - (idxBlack + 1);
                 if (customIdx >= 0 && customIdx < customImageFiles.Count)
@@ -386,16 +388,19 @@ namespace SpeedrunToolkitMod
             isPotatoMode = true;
             disabledLights.Clear();
 
-            // 1. Ограничения Камеры & Скайбокса
+            AnnihilateParticles();
+            ApplyUnlitFlatShaders();
+
             if (Camera.main != null)
             {
                 Camera.main.clearFlags = CameraClearFlags.SolidColor;
                 Camera.main.backgroundColor = Color.black;
-                Camera.main.farClipPlane = 30f;
+                Camera.main.farClipPlane = 80f;
             }
             RenderSettings.fog = false;
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = Color.black;
 
-            // 2. Ультра-Картофельные QualitySettings
             QualitySettings.masterTextureLimit = 8;
             QualitySettings.pixelLightCount = 0;
             QualitySettings.antiAliasing = 0;
@@ -407,31 +412,55 @@ namespace SpeedrunToolkitMod
             QualitySettings.particleRaycastBudget = 0;
             QualitySettings.lodBias = 0.01f;
 
-            // 3. Отключение точечного света
-            foreach (var light in UnityEngine.Object.FindObjectsOfType<Light>())
+            foreach (var light in Object.FindObjectsOfType<Light>())
             {
-                if (light != null && light.enabled && (light.type == LightType.Point || light.type == LightType.Spot))
+                if (light != null && light.enabled)
                 {
                     disabledLights.Add(light);
                     light.enabled = false;
                 }
             }
 
-            // 4. Зачистка частиц и принудительный Unlit-шейдер
-            AnnihilateParticles();
-            ApplyUnlitFlatShaders();
+            // Distance Culling без AddComponent
+            var list = new List<Renderer>();
+            foreach (var rend in savedOriginalMaterials.Keys)
+            {
+                if (rend != null) list.Add(rend);
+            }
+            cullerComponent.SetTargetRenderers(list.ToArray());
+            cullerComponent.IsEnabled = true;
 
-            // 5. Снятие лимита кадров
             QualitySettings.vSyncCount = 0;
             QualitySettings.maxQueuedFrames = 0;
             Application.targetFrameRate = -1;
+        }
+
+        private Shader GetSafeFlatShader()
+        {
+            Shader shader = Shader.Find("Unlit/Color")
+                         ?? Shader.Find("Unlit/Texture")
+                         ?? Shader.Find("Standard")
+                         ?? Shader.Find("Legacy Shaders/Diffuse");
+
+            if (shader == null)
+            {
+                var anyRenderer = Object.FindObjectOfType<MeshRenderer>();
+                if (anyRenderer != null && anyRenderer.sharedMaterial != null)
+                {
+                    shader = anyRenderer.sharedMaterial.shader;
+                }
+            }
+
+            return shader;
         }
 
         public void RestoreDefaultGraphics()
         {
             isPotatoMode = false;
 
-            // 1. Возвращаем Камеру
+            cullerComponent.RestoreAllRenderers();
+            cullerComponent.IsEnabled = false;
+
             if (Camera.main != null)
             {
                 Camera.main.clearFlags = CameraClearFlags.Skybox;
@@ -439,43 +468,24 @@ namespace SpeedrunToolkitMod
             }
             RenderSettings.fog = true;
 
-            // 2. Восстанавливаем Качество
-            QualitySettings.masterTextureLimit = 0;
-            QualitySettings.pixelLightCount = 4;
-            QualitySettings.antiAliasing = 2;
-            QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
-            QualitySettings.shadows = ShadowQuality.All;
-            QualitySettings.realtimeReflectionProbes = true;
-            QualitySettings.billboardsFaceCameraPosition = true;
-            QualitySettings.softVegetation = true;
-            QualitySettings.particleRaycastBudget = 4096;
-            QualitySettings.lodBias = 1.0f;
-
-            // 3. Включаем обратно свет
             foreach (var light in disabledLights)
             {
                 if (light != null) light.enabled = true;
             }
             disabledLights.Clear();
 
-            // 4. Восстанавливаем оригинальные материалы
             RestoreOriginalShaders();
-
-            // 5. Применяем пользовательский конфиг
             ApplyGraphicsSettings();
         }
 
-        // 1. Полноэкранный 480x270 (Пиксельный растянутый рендер)
         public void ApplyPotatoFullscreen()
         {
-            // Сохраняем реальные размеры экрана перед сбросом
             if (Screen.width > 600) originalWidth = Screen.width;
             if (Screen.height > 400) originalHeight = Screen.height;
 
             Screen.SetResolution(480, 270, FullScreenMode.ExclusiveFullScreen);
         }
 
-        // 2. Оконный 480x270 (Компактное окно)
         public void ApplyPotatoWindowed()
         {
             if (Screen.width > 600) originalWidth = Screen.width;
@@ -484,19 +494,16 @@ namespace SpeedrunToolkitMod
             Screen.SetResolution(480, 270, false);
         }
 
-        // 1. Ультра-низкое 320x240 (4:3) Полноэкранное
         public void ApplyPotato320x240Full()
         {
             Screen.SetResolution(320, 240, FullScreenMode.ExclusiveFullScreen);
         }
 
-        // 2. Ультра-низкое 320x180 (16:9) Полноэкранное
         public void ApplyPotato320x180Full()
         {
             Screen.SetResolution(320, 180, FullScreenMode.ExclusiveFullScreen);
         }
 
-        // 3. Возврат родного разрешения монитора
         public void RestoreNativeResolution()
         {
             Screen.SetResolution(originalWidth, originalHeight, FullScreenMode.FullScreenWindow);
@@ -504,40 +511,57 @@ namespace SpeedrunToolkitMod
 
         public void AnnihilateParticles()
         {
-            foreach (var ps in UnityEngine.Object.FindObjectsOfType<ParticleSystem>())
+            foreach (var ps in Object.FindObjectsOfType<ParticleSystem>())
             {
                 ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
                 ps.gameObject.SetActive(false);
             }
         }
 
-        private System.Collections.Generic.Dictionary<Renderer, Material[]> savedOriginalMaterials
-    = new System.Collections.Generic.Dictionary<Renderer, Material[]>();
-
         public void ApplyUnlitFlatShaders()
         {
-            // Создаем самый примитивный шейдер без освещения
-            Material unlitMat = new Material(Shader.Find("Unlit/Color"));
-            unlitMat.color = new Color(0.6f, 0.6f, 0.6f);
+            Shader flatShader = GetSafeFlatShader();
+            if (flatShader == null) return;
 
-            foreach (var rend in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            Material flatMaterial = new Material(flatShader);
+            if (flatMaterial.HasProperty("_Color"))
             {
-                // Строка 518: Простая и корректная проверка на системы частиц
-                if (rend == null || rend is ParticleSystemRenderer) continue;
-
-                // Сохраняем исходные материалы для возможности отмены
-                if (!savedOriginalMaterials.ContainsKey(rend))
-                {
-                    savedOriginalMaterials[rend] = rend.sharedMaterials;
-                }
-
-                Material[] flatArray = new Material[rend.sharedMaterials.Length];
-                for (int i = 0; i < flatArray.Length; i++)
-                {
-                    flatArray[i] = unlitMat;
-                }
-                rend.materials = flatArray;
+                flatMaterial.color = new Color(0.65f, 0.65f, 0.65f, 1f);
             }
+
+            Renderer[] renderers = Object.FindObjectsOfType<Renderer>();
+            foreach (var r in renderers)
+            {
+                if (r == null || !r.enabled || r is ParticleSystemRenderer) continue;
+
+                string name = r.gameObject.name.ToLower();
+                if (name.Contains("player") || name.Contains("canvas") || name.Contains("hud") || name.Contains("sky")) continue;
+
+                if (!savedOriginalMaterials.ContainsKey(r))
+                {
+                    savedOriginalMaterials[r] = r.sharedMaterials;
+                }
+
+                Material[] flatMaterialsArray = new Material[r.sharedMaterials.Length];
+                for (int i = 0; i < flatMaterialsArray.Length; i++)
+                {
+                    flatMaterialsArray[i] = flatMaterial;
+                }
+
+                r.materials = flatMaterialsArray;
+            }
+        }
+
+        public void RestoreOriginalShaders()
+        {
+            foreach (var pair in savedOriginalMaterials)
+            {
+                if (pair.Key != null && pair.Value != null)
+                {
+                    pair.Key.materials = pair.Value;
+                }
+            }
+            savedOriginalMaterials.Clear();
         }
 
         public class WireframeController : MonoBehaviour
@@ -555,28 +579,15 @@ namespace SpeedrunToolkitMod
             }
         }
 
-        public void RestoreOriginalShaders()
-        {
-            foreach (var pair in savedOriginalMaterials)
-            {
-                if (pair.Key != null)
-                {
-                    pair.Key.materials = pair.Value;
-                }
-            }
-            savedOriginalMaterials.Clear();
-        }
-
-        private bool derivesFromParticleRenderer(Renderer r) => r is ParticleSystemRenderer;
-
         public void ToggleWireframe()
         {
             WireframeController.ShowWireframe = !WireframeController.ShowWireframe;
         }
+
         public void NextSkybox()
         {
             EnsureSkyboxNamesLoaded();
-            int total = availableSkyboxNames.Count + 1 + 1 + customImageFiles.Count; // Default + Native + Black + Custom Files
+            int total = availableSkyboxNames.Count + 1 + 1 + customImageFiles.Count;
             CurrentSkyboxIndex = (CurrentSkyboxIndex + 1) % total;
             ApplyGraphicsSettings();
         }
@@ -619,17 +630,15 @@ namespace SpeedrunToolkitMod
 
         public void DrawUI(float startX, float startY, float width)
         {
-            // Внутреннее окно прокрутки увеличено до 950px по высоте
             scrollPosition = GUI.BeginScrollView(
-                new Rect(startX, startY, width, 360f),
+                new Rect(startX, startY, width, 310f),
                 scrollPosition,
-                new Rect(0, 0, width - 20f, 950f)
+                new Rect(0, 0, width - 20f, 580f)
             );
 
             float y = 5f;
             float contentWidth = width - 25f;
 
-            // 1. Главный переключатель Potato Mode
             string potatoBtnText = isPotatoMode ? "⚡ RESTORE NORMAL GRAPHICS" : "🔥 ENABLE ULTRA POTATO MODE";
             if (GUI.Button(new Rect(0, y, contentWidth, 25f), potatoBtnText))
             {
@@ -644,7 +653,6 @@ namespace SpeedrunToolkitMod
             }
             y += 30f;
 
-            // 2. Блок быстрых пресетов разрешения (Potato Resolution)
             GUI.Label(new Rect(0, y, contentWidth, 18f), "<b>Potato Resolution Presets:</b>");
             y += 20f;
 
@@ -679,11 +687,9 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-        // 3. Стандартные настройки графики
-        GUI.Label(new Rect(0, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
+            GUI.Label(new Rect(0, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
             y += 24f;
 
-            // Dark Mode
             bool newDarkMode = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableDarkMode, " Enable Dark Mode");
             if (newDarkMode != EnableDarkMode)
             {
@@ -694,7 +700,6 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            // Skybox Selector Controls
             EnsureSkyboxNamesLoaded();
             string skyName = "Map Default";
             int nativeCount = availableSkyboxNames.Count;
@@ -732,14 +737,12 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-            // Refresh Custom Skyboxes Button
             if (GUI.Button(new Rect(0, y, contentWidth, 22f), "📁 Rescan Custom Skyboxes Folder"))
             {
                 ScanCustomSkyboxes();
             }
             y += 26f;
 
-            // Post-Processing
             bool newPP = GUI.Toggle(new Rect(0, y, contentWidth, 20f), DisablePostProcessing, " Disable Post-Processing (Bloom, FX)");
             if (newPP != DisablePostProcessing)
             {
@@ -750,7 +753,6 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            // FPS Limit
             GUI.Label(new Rect(0, y, 70f, 20f), "FPS Limit:");
             fpsInputBuffer = GUI.TextField(new Rect(75f, y, 50f, 20f), fpsInputBuffer);
             if (GUI.Button(new Rect(130f, y, 50f, 20f), "Set"))
@@ -765,7 +767,6 @@ namespace SpeedrunToolkitMod
             }
             y += 25f;
 
-            // Быстрые кнопки-пресеты FPS
             int[] presets = new int[] { -1, 60, 120, 144, 240, 360 };
             float btnX = 0f;
             float presetBtnWidth = (contentWidth - 25f) / 6f;
@@ -785,7 +786,6 @@ namespace SpeedrunToolkitMod
             }
             y += 25f;
 
-            // Shadows
             bool newShadows = GUI.Toggle(new Rect(0, y, contentWidth, 20f), DisableShadows, " Disable Shadows (FPS Boost)");
             if (newShadows != DisableShadows)
             {
@@ -796,7 +796,6 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            // Custom Draw Distance
             bool newCustomDist = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableCustomRenderDistance, " Enable Custom Draw Distance");
             if (newCustomDist != EnableCustomRenderDistance)
             {
@@ -821,7 +820,6 @@ namespace SpeedrunToolkitMod
                 y += 20f;
             }
 
-            // Custom Shadow Distance
             bool newCustomShadow = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableCustomShadowDistance, " Enable Custom Shadow Distance");
             if (newCustomShadow != EnableCustomShadowDistance)
             {
@@ -846,7 +844,6 @@ namespace SpeedrunToolkitMod
                 y += 20f;
             }
 
-            // Hide Hands
             bool newHands = GUI.Toggle(new Rect(0, y, contentWidth, 20f), HideHands, " Hide First-Person Hands");
             if (newHands != HideHands)
             {
@@ -857,7 +854,6 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            // HideGameHUD
             bool newHUD = GUI.Toggle(new Rect(0, y, contentWidth, 20f), HideGameHUD, " Hide Native Game HUD");
             if (newHUD != HideGameHUD)
             {
@@ -868,7 +864,6 @@ namespace SpeedrunToolkitMod
             }
             y += 24f;
 
-            // QualitySettings
             string qualityText = TextureQuality == 0 ? "High (Default)" : (TextureQuality == 1 ? "Medium (1/2)" : "Low / Potato (1/4)");
             if (GUI.Button(new Rect(0, y, contentWidth, 22f), $"Textures: [{qualityText}]"))
             {
@@ -879,13 +874,53 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-            // ForceApply
             if (GUI.Button(new Rect(0, y, contentWidth, 22f), "🔄 Force Apply All Settings"))
             {
                 ApplyGraphicsSettings();
             }
 
             GUI.EndScrollView();
+        }
+    }
+
+    public class DistanceCuller
+    {
+        public float CullDistance = 50f;
+        public bool IsEnabled = false;
+        private Renderer[] renderersToCull;
+        private float lastCheckTime;
+
+        public void SetTargetRenderers(Renderer[] renderers)
+        {
+            renderersToCull = renderers;
+        }
+
+        public void Update()
+        {
+            if (!IsEnabled || renderersToCull == null) return;
+            if (Time.unscaledTime - lastCheckTime < 0.2f) return;
+            lastCheckTime = Time.unscaledTime;
+
+            Camera mainCam = Camera.main;
+            if (mainCam == null) return;
+
+            Vector3 camPos = mainCam.transform.position;
+            float sqrDist = CullDistance * CullDistance;
+
+            foreach (var r in renderersToCull)
+            {
+                if (r == null) continue;
+                r.enabled = (r.transform.position - camPos).sqrMagnitude <= sqrDist;
+            }
+        }
+
+        public void RestoreAllRenderers()
+        {
+            if (renderersToCull == null) return;
+            foreach (var r in renderersToCull)
+            {
+                if (r != null) r.enabled = true;
+            }
         }
     }
 }

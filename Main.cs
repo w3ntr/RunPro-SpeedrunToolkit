@@ -4,7 +4,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using System.IO;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.5.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.6.1", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -209,6 +209,7 @@ namespace SpeedrunToolkitMod
         {
             if (freecamModule != null) freecamModule.OnUpdate();
             if (musicModule != null) musicModule.OnUpdate();
+            graphicsModule?.OnUpdate();
 
             if (activeRebindIndex != -1)
             {
@@ -400,7 +401,7 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.5.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.6.1");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
