@@ -6,8 +6,8 @@ namespace SpeedrunToolkitMod
 {
     public class FixesModule
     {
-        public static bool EnableJumperFix = true;
-        public static bool EnableBoosterFix = true;
+        public static bool EnableJumperFix = false;
+        public static bool EnableBoosterFix = false;
         public static bool EnableLedgeFix = true;
 
         public static float JumperForceMultiplier = 1.025f;

@@ -1,7 +1,6 @@
 using Il2Cpp;
 using MelonLoader;
 using MelonLoader.Utils;
-using SpeedrunToolkit;
 using System.IO;
 using UnityEngine;
 
@@ -24,7 +23,6 @@ namespace SpeedrunToolkitMod
         public static SlomoModule Slomo = new SlomoModule();
         private CrosshairModule crosshairModule = new CrosshairModule();
         public FixesModule fixesModule = new FixesModule();
-        private DiscordManager _discordManager;
         private bool showMenu = false;
         public static bool instantRespawn = false;
         private static float lastRespawnTime = 0f;
@@ -144,7 +142,6 @@ namespace SpeedrunToolkitMod
             freecamModule = new FreecamModule();
             musicModule = new MusicReplacerModule();
             movementModule = new MovementModule();
-            _discordManager = new DiscordManager();
 
             speedoModule.IsEnabled = prefHudEnabled.Value;
             speedoModule.ShowSpeed = prefShowSpeed.Value;
@@ -201,11 +198,6 @@ namespace SpeedrunToolkitMod
                 movementModule.Reset();
             }
             ApplyTungTungSkin();
-        }
-
-        public override void OnApplicationQuit()
-        {
-            _discordManager?.Dispose();
         }
 
         public override void OnUpdate()
@@ -310,7 +302,6 @@ namespace SpeedrunToolkitMod
 
                     movementModule.Update();
                     TrajectoryModule.Update();
-                    _discordManager?.Update();
                 }
                 HandleInstantRespawn();
             }
