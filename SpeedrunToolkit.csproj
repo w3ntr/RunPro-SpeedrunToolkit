@@ -55,7 +55,8 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\net6\0Harmony.dll</HintPath>
     </Reference>
-    <Reference Include="Assembly-CSharp">
+    <Reference Include="Assembly-CSharp, Version=1.0.2.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
@@ -132,6 +133,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DiscordManager.cs" />
     <Compile Include="TungTungLoader.cs" />
     <Compile Include="TimerModule.cs" />
     <Compile Include="TriggerVisualizer.cs" />
@@ -162,12 +164,10 @@
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\ILRepack.Lib.MSBuild.Task.2.0.46\build\ILRepack.Lib.MSBuild.Task.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\ILRepack.Lib.MSBuild.Task.2.0.46\build\ILRepack.Lib.MSBuild.Task.targets'))" />
   </Target>
-
   <Target Name="ILRepack" AfterTargets="Build">
     <ItemGroup>
       <InputAssemblies Include="$(TargetPath)" />
       <InputAssemblies Include="$(TargetDir)NLayer.dll" />
-      
       <!-- Все правильные пути к зависимостям -->
       <LibraryPath Include="$(TargetDir)" />
       <LibraryPath Include="E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\net6" />
@@ -175,12 +175,6 @@
       <LibraryPath Include="E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Dependencies" />
       <LibraryPath Include="E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Dependencies\Il2CppAssemblyGenerator\Cpp2IL\cpp2il_out" />
     </ItemGroup>
-    <ILRepack
-      Parallel="true"
-      Internalize="true"
-      InputAssemblies="@(InputAssemblies)"
-      LibraryPath="@(LibraryPath)"
-      OutputFile="$(TargetPath)"
-      TargetKind="SameAsPrimaryAssembly" />
+    <ILRepack Parallel="true" Internalize="true" InputAssemblies="@(InputAssemblies)" LibraryPath="@(LibraryPath)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" />
   </Target>
 </Project>

@@ -1,5 +1,6 @@
-using UnityEngine;
+using Il2Cpprunpro.SO;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace SpeedrunToolkitMod
 {
@@ -8,7 +9,8 @@ namespace SpeedrunToolkitMod
         public bool IsEnabled = true;
         public bool ShowSpeed = true;
         public bool ShowCoords = true;
-        public bool ShowAngles = true; // Поле для отображения углов обзора
+        public bool ShowAngles = true;
+        public bool ShowXP = true;
         public bool HideNativeSpeedo = true;
 
         public float HudX = 20f;
@@ -23,6 +25,8 @@ namespace SpeedrunToolkitMod
         private float currentSpeed;
         private Texture2D bgTexture;
         private List<GameObject> disabledNativeObjects = new List<GameObject>();
+        private UnityEngine.Object ranksTargetObj;
+        private Il2CppSystem.Reflection.FieldInfo expField;
 
         public static readonly string[] ColorNames = { "Cyan", "White", "Yellow", "Lime", "Orange", "Pink", "Red" };
         public static readonly Color[] Colors = {
@@ -38,6 +42,7 @@ namespace SpeedrunToolkitMod
         public void Init()
         {
             UpdateBgTexture();
+            FindPlayerRanksSO();
         }
 
         public void UpdateBgTexture()
@@ -47,10 +52,47 @@ namespace SpeedrunToolkitMod
             bgTexture.Apply();
         }
 
+        public void FindPlayerRanksSO()
+        {
+            // Классы, в которых игра может держать реальный runtime XP
+            string[] targetClasses = new string[]
+            {
+        "runpro.PlayerRanks, Assembly-CSharp",
+        "runpro.RankManager, Assembly-CSharp",
+        "runpro.SO.PlayerRanksSO, Assembly-CSharp"
+            };
+
+            foreach (string className in targetClasses)
+            {
+                Il2CppSystem.Type type = Il2CppSystem.Type.GetType(className);
+                if (type == null) continue;
+
+                var found = Resources.FindObjectsOfTypeAll(type);
+                if (found != null && found.Length > 0)
+                {
+                    // Берем самый последний активный инстанс на сцене
+                    ranksTargetObj = found[found.Length - 1];
+
+                    // Ищем подходящее поле XP
+                    var fields = type.GetFields();
+                    foreach (var f in fields)
+                    {
+                        string fName = f.Name.ToLower();
+                        if (fName == "playerexp" || fName == "currentexp" || fName == "exp" || fName == "m_exp")
+                        {
+                            expField = f;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         public void OnSceneWasLoaded(string sceneName)
         {
             disabledNativeObjects.Clear();
             if (HideNativeSpeedo) ToggleNativeSpeedometer(true);
+            FindPlayerRanksSO();
         }
 
         public void ToggleNativeSpeedometer(bool hide)
@@ -91,6 +133,12 @@ namespace SpeedrunToolkitMod
             if (HideNativeSpeedo && Time.frameCount % 180 == 0)
             {
                 ToggleNativeSpeedometer(true);
+            }
+
+            // Периодически обновляем инстанс XP для работы в реальном времени при беге
+            if (Time.frameCount % 60 == 0)
+            {
+                FindPlayerRanksSO();
             }
 
             if (!IsEnabled) return;
@@ -141,11 +189,12 @@ namespace SpeedrunToolkitMod
             if (ShowSpeed) lines++;
             if (ShowCoords) lines++;
             if (ShowAngles) lines++;
+            if (ShowXP) lines++;
             if (lines == 0) return;
 
             float lineHeight = FontSize + 8f;
-            float width = FontSize * 16f;
-            if (width < 240f) width = 240f;
+            float width = FontSize * 17f;
+            if (width < 260f) width = 260f;
             float height = lines * lineHeight + 12f;
 
             GUI.DrawTexture(new Rect(HudX, HudY, width, height), bgTexture);
@@ -186,7 +235,32 @@ namespace SpeedrunToolkitMod
 
                     GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "Look:", labelStyle);
                     GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.75f, lineHeight), $"P:{pitch:F2}°  Y:{yaw:F2}°", valStyle);
+                    currentY += lineHeight;
                 }
+            }
+
+            if (ShowXP)
+            {
+                int totalExp = 0;
+
+                if (ranksTargetObj != null && expField != null)
+                {
+                    totalExp = expField.GetValue(ranksTargetObj).Unbox<int>();
+                }
+                else
+                {
+                    totalExp = PlayerPrefs.GetInt("PlayerExp", 300);
+                }
+
+                int level = (int)(System.Math.Pow(totalExp / 400f, 0.75) * System.Math.Pow(1.3333333730697632, 0.75));
+                int minExp = (int)(400f * (0.75 * System.Math.Pow(level, 1.3333333730697632)));
+                int nextExp = (int)(400f * (0.75 * System.Math.Pow(level + 1, 1.3333333730697632)));
+
+                int currentProgress = totalExp - minExp;
+                int neededForNext = nextExp - minExp;
+
+                GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "XP:", labelStyle);
+                GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.75f, lineHeight), $"Lvl {level} ({currentProgress}/{neededForNext})", valStyle);
             }
         }
     }

@@ -1,8 +1,9 @@
 using Il2Cpp;
 using MelonLoader;
 using MelonLoader.Utils;
-using UnityEngine;
+using SpeedrunToolkit;
 using System.IO;
+using UnityEngine;
 
 [assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.6.1", "w3ntr")]
 [assembly: MelonGame(null, null)]
@@ -23,11 +24,10 @@ namespace SpeedrunToolkitMod
         public static SlomoModule Slomo = new SlomoModule();
         private CrosshairModule crosshairModule = new CrosshairModule();
         public FixesModule fixesModule = new FixesModule();
-       // private TimerModule timerModule = new TimerModule();
+        private DiscordManager _discordManager;
         private bool showMenu = false;
         public static bool instantRespawn = false;
         private static float lastRespawnTime = 0f;
-
 
         private void HandleInstantRespawn()
         {
@@ -41,18 +41,14 @@ namespace SpeedrunToolkitMod
                 {
                     lastRespawnTime = Time.time;
 
-                    // 1. Гасим экраны смерти
                     scoreBoard.m_deathImg.SetActive(false);
                     scoreBoard.gameObject.SetActive(false);
 
-                    // 2. Возвращаем захват мыши (игра отключает его при смерти)
                     Cursor.lockState = CursorLockMode.Locked;
                     Cursor.visible = false;
 
-                    // 3. Вызываем родной респавн
                     scoreBoard.On_TryAgain();
 
-                    // 4. Принудительно включаем контроллер игрока
                     var fps = Object.FindObjectOfType<Il2Cpp.FirstPersonController>();
                     if (fps != null)
                     {
@@ -87,6 +83,8 @@ namespace SpeedrunToolkitMod
         private MelonPreferences_Entry<bool> prefHudEnabled;
         private MelonPreferences_Entry<bool> prefShowSpeed;
         private MelonPreferences_Entry<bool> prefShowCoords;
+        private MelonPreferences_Entry<bool> prefShowAngles;
+        private MelonPreferences_Entry<bool> prefShowXP;
         private MelonPreferences_Entry<bool> prefHideNativeSpeedo;
         public static MelonPreferences_Entry<bool> prefTungEnabled;
         public static MelonPreferences_Entry<KeyCode> prefTungKey;
@@ -122,6 +120,8 @@ namespace SpeedrunToolkitMod
             prefHudEnabled = prefCategory.CreateEntry("HudEnabled", true);
             prefShowSpeed = prefCategory.CreateEntry("ShowSpeed", true);
             prefShowCoords = prefCategory.CreateEntry("ShowCoords", true);
+            prefShowAngles = prefCategory.CreateEntry("ShowAngles", true);
+            prefShowXP = prefCategory.CreateEntry("ShowXP", true);
             prefHideNativeSpeedo = prefCategory.CreateEntry("HideNativeSpeedo", true);
             prefHudX = prefCategory.CreateEntry("HudX", 20f);
             prefHudY = prefCategory.CreateEntry("HudY", 60f);
@@ -144,10 +144,13 @@ namespace SpeedrunToolkitMod
             freecamModule = new FreecamModule();
             musicModule = new MusicReplacerModule();
             movementModule = new MovementModule();
+            _discordManager = new DiscordManager();
 
             speedoModule.IsEnabled = prefHudEnabled.Value;
             speedoModule.ShowSpeed = prefShowSpeed.Value;
             speedoModule.ShowCoords = prefShowCoords.Value;
+            speedoModule.ShowAngles = prefShowAngles.Value;
+            speedoModule.ShowXP = prefShowXP.Value;
             speedoModule.HideNativeSpeedo = prefHideNativeSpeedo.Value;
             speedoModule.HudX = prefHudX.Value;
             speedoModule.HudY = prefHudY.Value;
@@ -181,7 +184,6 @@ namespace SpeedrunToolkitMod
 
         private void BlockFinishAndTimer()
         {
-            // Optional implementation for invalidating timer/finish triggers
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
@@ -192,18 +194,19 @@ namespace SpeedrunToolkitMod
             if (freecamModule != null) freecamModule.DisableFreecam();
             if (deathZoneModule != null) deathZoneModule.OnSceneWasLoaded(sceneName);
             if (Slomo != null) Slomo.ResetSpeed();
-            // 1. Сбрасываем гравитацию на дефолтную (1.0f)
             ResetGravity();
 
-            // 2. Отключаем/сбрасываем модификации мувмента при загрузке карты
             if (movementModule != null)
             {
                 movementModule.Reset();
             }
-            // Задержка или вызов подмены после прогрузки карты
             ApplyTungTungSkin();
         }
 
+        public override void OnApplicationQuit()
+        {
+            _discordManager?.Dispose();
+        }
 
         public override void OnUpdate()
         {
@@ -235,7 +238,6 @@ namespace SpeedrunToolkitMod
                 return;
             }
             {
-                // Нажатие F7 переключает видимость Тун Туна
                 if (Input.GetKeyDown(prefTungKey.Value))
                 {
                     prefTungEnabled.Value = !prefTungEnabled.Value;
@@ -247,7 +249,6 @@ namespace SpeedrunToolkitMod
                 {
                     if (prefTungEnabled.Value)
                     {
-                        // Если включен — создаем/включаем и анимируем
                         if (TungTungLoader.tungObject == null)
                         {
                             TungTungLoader.SpawnTungTung(player.transform);
@@ -261,7 +262,6 @@ namespace SpeedrunToolkitMod
                     }
                     else
                     {
-                        // Если выключен — скрываем
                         if (TungTungLoader.tungObject != null && TungTungLoader.tungObject.activeSelf)
                         {
                             TungTungLoader.SetActive(false);
@@ -310,16 +310,10 @@ namespace SpeedrunToolkitMod
 
                     movementModule.Update();
                     TrajectoryModule.Update();
-                    // timerModule.OnUpdate();
+                    _discordManager?.Update();
                 }
-                // Мгновенный респавн проверяется каждый кадр
                 HandleInstantRespawn();
             }
-        }
-
-        public override void OnFixedUpdate()
-        {
-            // if (movementModule != null) movementModule.OnFixedUpdate();
         }
 
         public override void OnGUI()
@@ -347,6 +341,8 @@ namespace SpeedrunToolkitMod
                 prefHudEnabled.Value = speedoModule.IsEnabled;
                 prefShowSpeed.Value = speedoModule.ShowSpeed;
                 prefShowCoords.Value = speedoModule.ShowCoords;
+                prefShowAngles.Value = speedoModule.ShowAngles;
+                prefShowXP.Value = speedoModule.ShowXP;
                 prefHideNativeSpeedo.Value = speedoModule.HideNativeSpeedo;
                 prefHudX.Value = speedoModule.HudX;
                 prefHudY.Value = speedoModule.HudY;
@@ -361,10 +357,8 @@ namespace SpeedrunToolkitMod
 
         private void ApplyTungTungSkin()
         {
-            // Ищем объект игрока по тегу или имени
             GameObject player = GameObject.FindWithTag("Player");
 
-            // Если по тегу не находит, распечатаем лог для отладки
             if (player == null)
             {
                 MelonLogger.Warning(" Player isn't found!! Trying search by name...");
@@ -373,13 +367,11 @@ namespace SpeedrunToolkitMod
 
             if (player != null)
             {
-                // 1. Отключаем видимость родного меша
                 foreach (var rend in player.GetComponentsInChildren<Renderer>())
                 {
                     rend.enabled = false;
                 }
 
-                // 2. Спавним Тун Туна
                 GameObject tung = TungTungLoader.SpawnTungTung(player.transform);
 
                 if (tung != null)
@@ -407,7 +399,6 @@ namespace SpeedrunToolkitMod
             float y = menuRect.y + 28f;
             float contentWidth = menuWidth - 30f;
 
-            // Добавлена вкладка "Fixes" (всего 11 вкладок)
             string[] tabNames = new string[] { "Practice", "HUD & Model", "Death", "FOV", "Input", "Graphics", "Music", "Movement", "Fix & QoL", "Slomo", "Info" };
             int tabsPerRow = 5;
             float tabGap = 3f;
@@ -428,7 +419,6 @@ namespace SpeedrunToolkitMod
                 }
             }
 
-            // Автоматический расчет высоты для любого количества рядов кнопок
             int totalRows = (tabNames.Length + tabsPerRow - 1) / tabsPerRow;
             y += (tabHeight + 3f) * totalRows + 12f;
 
@@ -485,35 +475,68 @@ namespace SpeedrunToolkitMod
             }
             else if (selectedTab == 1 && speedoModule != null)
             {
-                speedoModule.IsEnabled = GUI.Toggle(new Rect(x, y, contentWidth, 20), speedoModule.IsEnabled, " Enable HUD Overlay");
-                y += 22;
-                speedoModule.ShowSpeed = GUI.Toggle(new Rect(x, y, contentWidth, 20), speedoModule.ShowSpeed, " Show Speedometer");
-                y += 22;
-                speedoModule.ShowCoords = GUI.Toggle(new Rect(x, y, contentWidth, 20), speedoModule.ShowCoords, " Show Player Coordinates");
-                y += 22;
+                speedoModule.IsEnabled = GUI.Toggle(new Rect(x, y, contentWidth, 18), speedoModule.IsEnabled, " Enable HUD Overlay");
+                y += 20;
 
-                bool newHideNative = GUI.Toggle(new Rect(x, y, contentWidth, 20), speedoModule.HideNativeSpeedo, " Hide Native Game Speedometer");
+                float checkW = contentWidth / 2f;
+                speedoModule.ShowSpeed = GUI.Toggle(new Rect(x, y, checkW, 18), speedoModule.ShowSpeed, " Speedometer");
+                speedoModule.ShowCoords = GUI.Toggle(new Rect(x + checkW, y, checkW, 18), speedoModule.ShowCoords, " Coordinates");
+                y += 20;
+
+                speedoModule.ShowAngles = GUI.Toggle(new Rect(x, y, checkW, 18), speedoModule.ShowAngles, " Look Angles");
+                speedoModule.ShowXP = GUI.Toggle(new Rect(x + checkW, y, checkW, 18), speedoModule.ShowXP, " Player XP & Level");
+                y += 20;
+
+                bool newHideNative = GUI.Toggle(new Rect(x, y, contentWidth, 18), speedoModule.HideNativeSpeedo, " Hide Native Game Speedometer");
                 if (newHideNative != speedoModule.HideNativeSpeedo)
                 {
                     speedoModule.HideNativeSpeedo = newHideNative;
                     speedoModule.ToggleNativeSpeedometer(newHideNative);
                 }
-                y += 25;
+                y += 22;
 
-                GUI.Label(new Rect(x, y, contentWidth, 20), $"Font Size: {speedoModule.FontSize}");
+                // Настройки положения HUD
+                GUI.Label(new Rect(x, y, contentWidth, 18), $"HUD Position X: {speedoModule.HudX:F0}px  |  Y: {speedoModule.HudY:F0}px");
                 y += 18;
-                speedoModule.FontSize = (int)GUI.HorizontalSlider(new Rect(x, y, contentWidth, 15), speedoModule.FontSize, 10f, 32f);
+                speedoModule.HudX = GUI.HorizontalSlider(new Rect(x, y, contentWidth / 2f - 5f, 15), speedoModule.HudX, 0f, Screen.width - 200f);
+                speedoModule.HudY = GUI.HorizontalSlider(new Rect(x + contentWidth / 2f + 5f, y, contentWidth / 2f - 5f, 15), speedoModule.HudY, 0f, Screen.height - 100f);
+                y += 20;
+
+                // Размер шрифта и Прозрачность фона
+                GUI.Label(new Rect(x, y, contentWidth, 18), $"Font Size: {speedoModule.FontSize}pt  |  Background Opacity: {(int)(speedoModule.BgOpacity * 100)}%");
+                y += 18;
+                speedoModule.FontSize = (int)GUI.HorizontalSlider(new Rect(x, y, contentWidth / 2f - 5f, 15), speedoModule.FontSize, 10f, 32f);
+
+                float newBgOpacity = GUI.HorizontalSlider(new Rect(x + contentWidth / 2f + 5f, y, contentWidth / 2f - 5f, 15), speedoModule.BgOpacity, 0f, 1f);
+                if (Mathf.Abs(newBgOpacity - speedoModule.BgOpacity) > 0.01f)
+                {
+                    speedoModule.BgOpacity = newBgOpacity;
+                    speedoModule.UpdateBgTexture();
+                }
+                y += 22;
+
+                // Выбор цвета текста
+                GUI.Label(new Rect(x, y, contentWidth, 18), $"Text Color: {SpeedometerModule.ColorNames[speedoModule.ColorIndex]}");
+                y += 18;
+                float colorBtnW = (contentWidth - (SpeedometerModule.ColorNames.Length - 1) * 3f) / SpeedometerModule.ColorNames.Length;
+                for (int c = 0; c < SpeedometerModule.ColorNames.Length; c++)
+                {
+                    if (GUI.Button(new Rect(x + c * (colorBtnW + 3f), y, colorBtnW, 20f), SpeedometerModule.ColorNames[c]))
+                    {
+                        speedoModule.ColorIndex = c;
+                    }
+                }
                 y += 25;
 
                 GUI.Box(new Rect(x, y, contentWidth, 1), "");
-                y += 10;
+                y += 8;
 
                 if (crosshairModule != null)
                 {
                     y = crosshairModule.DrawUI(x, y, contentWidth);
                 }
                 prefTungEnabled.Value = GUI.Toggle(new Rect(x, y, contentWidth, 20), prefTungEnabled.Value, " Enable Tung Tung Sahur Model");
-                y += 25;
+                y += 22;
             }
             else if (selectedTab == 2 && deathZoneModule != null)
             {
@@ -648,7 +671,6 @@ namespace SpeedrunToolkitMod
                     "• <b>480p Window:</b> Switches game into a compact 480x270 window.\n" +
                     "• <b>Native Res:</b> Restores your monitor's original screen resolution.";
 
-                // Увеличена высота блока с 280 до 520px
                 GUI.Label(new Rect(x, y, contentWidth, 520f), infoText);
             }
 
