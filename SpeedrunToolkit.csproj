@@ -133,6 +133,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DiscordManager.cs" />
+    <Compile Include="DiscordRpc.cs" />
     <Compile Include="TungTungLoader.cs" />
     <Compile Include="TimerModule.cs" />
     <Compile Include="TriggerVisualizer.cs" />
