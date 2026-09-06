@@ -4,7 +4,7 @@ using MelonLoader.Utils;
 using System.IO;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.7.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.8.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -23,6 +23,8 @@ namespace SpeedrunToolkitMod
         public static SlomoModule Slomo = new SlomoModule();
         private CrosshairModule crosshairModule = new CrosshairModule();
         public FixesModule fixesModule = new FixesModule();
+        private DiscordManager discordManager;
+
         private bool showMenu = false;
         public static bool instantRespawn = false;
         private static float lastRespawnTime = 0f;
@@ -165,6 +167,9 @@ namespace SpeedrunToolkitMod
             Slomo.Init();
             crosshairModule.Init();
             movementModule.Init();
+
+            // Инициализация Discord Rich Presence
+            discordManager = new DiscordManager();
         }
 
         public void SetGravityScale(float scale)
@@ -202,6 +207,8 @@ namespace SpeedrunToolkitMod
 
         public override void OnUpdate()
         {
+            discordManager?.Update();
+
             if (freecamModule != null) freecamModule.OnUpdate();
             if (musicModule != null) musicModule.OnUpdate();
             graphicsModule?.OnUpdate();
@@ -307,6 +314,11 @@ namespace SpeedrunToolkitMod
             }
         }
 
+        public override void OnApplicationQuit()
+        {
+            discordManager?.Dispose();
+        }
+
         public override void OnGUI()
         {
             if (practiceModule != null) practiceModule.OnGUI();
@@ -384,7 +396,7 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.7.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.8.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;
