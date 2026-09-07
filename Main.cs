@@ -4,7 +4,7 @@ using MelonLoader.Utils;
 using System.IO;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.8.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "5.9.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -327,6 +327,7 @@ namespace SpeedrunToolkitMod
             if (crosshairModule != null) crosshairModule.OnGUI();
 
             if (showMenu) DrawSettingsMenu();
+            fixesModule.OnGUI();
         }
 
         private void SaveConfig()
@@ -396,7 +397,7 @@ namespace SpeedrunToolkitMod
             float menuY = (Screen.height - menuHeight) / 2f;
 
             Rect menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
-            GUI.Box(menuRect, "Speedrun Toolkit v5.8.0");
+            GUI.Box(menuRect, "Speedrun Toolkit v5.9.0");
 
             float x = menuRect.x + 15f;
             float y = menuRect.y + 28f;

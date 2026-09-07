@@ -11,16 +11,49 @@ namespace SpeedrunToolkitMod
         public static bool EnableLedgeFix = true;
 
         public static float JumperForceMultiplier = 1.025f;
-        public static float BoosterForceMultiplier = 1.00f;
+        public static float BoosterForceMultiplier = 1.0175f; // Идеальное базовое значение
 
-        public const float MinSafeLimit = 1.00f;
-        public const float MaxSafeLimit = 1.025f;
+        // Безопасные границы для Джампера
+        public const float MinJumperLimit = 1.0000f;
+        public const float MaxJumperLimit = 1.0250f;
+
+        // Новые безопасные границы для Бустера
+        public const float MinBoosterLimit = 1.0000f;
+        public const float MaxBoosterLimit = 1.0180f; // Лимит (абуз начинается с 1.0181f)
 
         private TimerModule timerModule = new TimerModule();
 
         public void OnUpdate()
         {
             timerModule.OnUpdate();
+        }
+
+        // Отрисовка прозрачного водяного знака (~60% видимости)
+        public void OnGUI()
+        {
+            if (EnableBoosterFix)
+            {
+                GUIStyle watermarkStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 14,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.UpperRight
+                };
+
+                // Проверка на абуз (выше 1.0180x)
+                bool isAbused = BoosterForceMultiplier < MinBoosterLimit || BoosterForceMultiplier > MaxBoosterLimit;
+
+                // Прозрачность ~60% (Alpha = 0.6f)
+                Color color = isAbused ? Color.red : Color.green;
+                color.a = 0.6f;
+                watermarkStyle.normal.textColor = color;
+
+                string text = isAbused
+                    ? $"[BOOSTER FIX: ABUSE ({BoosterForceMultiplier:F4}x)]"
+                    : $"[BOOSTER FIX: {BoosterForceMultiplier:F4}x]";
+
+                GUI.Label(new Rect(Screen.width - 270f, 20f, 250f, 30f), text, watermarkStyle);
+            }
         }
 
         public void DrawUI(float x, float y, float contentWidth)
@@ -45,7 +78,7 @@ namespace SpeedrunToolkitMod
                     JumperForceMultiplier = 1.025f;
                 }
 
-                if (Mathf.Abs(prevJumper - JumperForceMultiplier) > 0.001f)
+                if (Mathf.Abs(prevJumper - JumperForceMultiplier) > 0.0001f)
                 {
                     CheckFinishAbuse();
                 }
@@ -59,18 +92,20 @@ namespace SpeedrunToolkitMod
 
             if (EnableBoosterFix)
             {
-                GUI.Label(new Rect(x + 15f, y, contentWidth - 15f, 20), $"Booster Force Multiplier: <b>{BoosterForceMultiplier:F2}x</b>");
+                GUI.Label(new Rect(x + 15f, y, contentWidth - 15f, 20), $"Booster Force Multiplier: <b>{BoosterForceMultiplier:F4}x</b>");
                 y += 18f;
 
                 float prevBooster = BoosterForceMultiplier;
-                BoosterForceMultiplier = GUI.HorizontalSlider(new Rect(x + 15f, y, contentWidth - 115f, 15), BoosterForceMultiplier, 0.5f, 2.0f);
 
-                if (GUI.Button(new Rect(x + contentWidth - 95f, y - 2f, 95f, 20f), "Reset (1.00x)"))
+                // Слайдер строго до 1.0500f
+                BoosterForceMultiplier = GUI.HorizontalSlider(new Rect(x + 15f, y, contentWidth - 125f, 15), BoosterForceMultiplier, 0.9500f, 1.0500f);
+
+                if (GUI.Button(new Rect(x + contentWidth - 115f, y - 2f, 115f, 20f), "Reset (1.0175x)"))
                 {
-                    BoosterForceMultiplier = 1.00f;
+                    BoosterForceMultiplier = 1.0175f;
                 }
 
-                if (Mathf.Abs(prevBooster - BoosterForceMultiplier) > 0.001f)
+                if (Mathf.Abs(prevBooster - BoosterForceMultiplier) > 0.0001f)
                 {
                     CheckFinishAbuse();
                 }
@@ -117,8 +152,8 @@ namespace SpeedrunToolkitMod
 
         public static void CheckFinishAbuse()
         {
-            bool isJumperAbused = EnableJumperFix && (JumperForceMultiplier < MinSafeLimit || JumperForceMultiplier > MaxSafeLimit);
-            bool isBoosterAbused = EnableBoosterFix && (BoosterForceMultiplier < MinSafeLimit || BoosterForceMultiplier > MaxSafeLimit);
+            bool isJumperAbused = EnableJumperFix && (JumperForceMultiplier < MinJumperLimit || JumperForceMultiplier > MaxJumperLimit);
+            bool isBoosterAbused = EnableBoosterFix && (BoosterForceMultiplier < MinBoosterLimit || BoosterForceMultiplier > MaxBoosterLimit);
             bool isAbused = isJumperAbused || isBoosterAbused;
 
             GameObject[] allObjects = Object.FindObjectsOfType<GameObject>(true);
@@ -203,7 +238,7 @@ namespace SpeedrunToolkitMod
         }
     }
 
-    // --- ИСПРАВЛЕННЫЙ ПАТЧ БУСТЕРОВ ---
+    // --- ПАТЧ БУСТЕРОВ ---
     [HarmonyPatch(typeof(Booster), "OnTriggerEnter")]
     public static class Booster_Patch
     {
@@ -228,7 +263,6 @@ namespace SpeedrunToolkitMod
                 AudioSystem audio = Object.FindObjectOfType<AudioSystem>();
                 if (audio != null) audio.Play("booster");
 
-                // 1. Принудительно отключаем прижатие к земле в FPS-контроллере
                 if (fps != null)
                 {
                     fps.cancelGroundForce = true;
@@ -236,10 +270,8 @@ namespace SpeedrunToolkitMod
                     fps.m_PreviouslyGrounded = false;
                 }
 
-                // 2. Сдвигаем контроллер штатным методом CharacterController
                 controller.Move(Vector3.up * __instance.jumpOffset);
 
-                // 3. Применяем силы с учетом ползунка BoosterForceMultiplier
                 fakeForce.SetFakeForce(
                     __instance.forwardForce * FixesModule.BoosterForceMultiplier,
                     __instance.jumpForce * FixesModule.BoosterForceMultiplier,
