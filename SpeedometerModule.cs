@@ -17,8 +17,16 @@ namespace SpeedrunToolkitMod
         public float HudY = 60f;
         public int FontSize = 14;
         public FontStyle FontStyle = FontStyle.Bold;
-        public int ColorIndex = 0;
-        public float BgOpacity = 0.6f;
+
+        // --- HEX Настройки Цветов ---
+        public string LabelHex = "#FFFFFF";  // Цвет названий (Speed:, Pos: и т.д.)
+        public string ValueHex = "#00E5FF";  // Цвет значений (скорость, координаты)
+        public string BgHex = "#000000";     // Цвет фона плашки
+        public float BgOpacity = 0.6f;       // Прозрачность фона (0.0f - 1.0f)
+
+        // --- Смещения по оси X для раздельного перемещения ---
+        public float LabelOffsetX = 10f;
+        public float ValueOffsetX = 110f;
 
         private GameObject playerObj;
         private Vector3 lastPosition;
@@ -27,39 +35,127 @@ namespace SpeedrunToolkitMod
         private List<GameObject> disabledNativeObjects = new List<GameObject>();
         private UnityEngine.Object ranksTargetObj;
         private Il2CppSystem.Reflection.FieldInfo expField;
-
-        public static readonly string[] ColorNames = { "Cyan", "White", "Yellow", "Lime", "Orange", "Pink", "Red" };
-        public static readonly Color[] Colors = {
-            new Color(0f, 0.9f, 1f),
-            Color.white,
-            Color.yellow,
-            Color.green,
-            new Color(1f, 0.5f, 0f),
-            new Color(1f, 0.4f, 0.8f),
-            Color.red
-        };
-
+        private Rigidbody playerRb;
+        private CharacterController playerCc;
+        private float lastPosTime;
         public void Init()
         {
+            LoadConfig();
             UpdateBgTexture();
             FindPlayerRanksSO();
+        }
+            public void SaveConfig()
+        {
+            PlayerPrefs.SetString("Speedo_LabelHex", LabelHex);
+            PlayerPrefs.SetString("Speedo_ValueHex", ValueHex);
+            PlayerPrefs.SetString("Speedo_BgHex", BgHex);
+            PlayerPrefs.SetFloat("Speedo_BgOpacity", BgOpacity);
+            PlayerPrefs.SetFloat("Speedo_LabelOffsetX", LabelOffsetX);
+            PlayerPrefs.SetFloat("Speedo_ValueOffsetX", ValueOffsetX);
+            PlayerPrefs.SetInt("Speedo_FontSize", FontSize);
+            PlayerPrefs.SetInt("Speedo_FontStyle", (int)FontStyle);
+            PlayerPrefs.SetInt("Speedo_IsEnabled", IsEnabled ? 1 : 0);
+            PlayerPrefs.SetInt("Speedo_ShowSpeed", ShowSpeed ? 1 : 0);
+            PlayerPrefs.SetInt("Speedo_ShowCoords", ShowCoords ? 1 : 0);
+            PlayerPrefs.SetInt("Speedo_ShowAngles", ShowAngles ? 1 : 0);
+            PlayerPrefs.SetInt("Speedo_ShowXP", ShowXP ? 1 : 0);
+            PlayerPrefs.SetInt("Speedo_HideNative", HideNativeSpeedo ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+
+        public void LoadConfig()
+        {
+            // Загружаем с фиксированными дефолтами по умолчанию
+            LabelHex = PlayerPrefs.GetString("Speedo_LabelHex", "#FFFFFF");
+            ValueHex = PlayerPrefs.GetString("Speedo_ValueHex", "#00E5FF");
+            BgHex = PlayerPrefs.GetString("Speedo_BgHex", "#000000");
+            BgOpacity = PlayerPrefs.GetFloat("Speedo_BgOpacity", 0.6f);
+            LabelOffsetX = PlayerPrefs.GetFloat("Speedo_LabelOffsetX", 10f);
+            ValueOffsetX = PlayerPrefs.GetFloat("Speedo_ValueOffsetX", 110f);
+            FontSize = PlayerPrefs.GetInt("Speedo_FontSize", 14);
+            FontStyle = (FontStyle)PlayerPrefs.GetInt("Speedo_FontStyle", (int)FontStyle.Bold);
+            IsEnabled = PlayerPrefs.GetInt("Speedo_IsEnabled", 1) == 1;
+            ShowSpeed = PlayerPrefs.GetInt("Speedo_ShowSpeed", 1) == 1;
+            ShowCoords = PlayerPrefs.GetInt("Speedo_ShowCoords", 1) == 1;
+            ShowAngles = PlayerPrefs.GetInt("Speedo_ShowAngles", 1) == 1;
+            ShowXP = PlayerPrefs.GetInt("Speedo_ShowXP", 1) == 1;
+            HideNativeSpeedo = PlayerPrefs.GetInt("Speedo_HideNative", 1) == 1;
+
+            // Обязательно синхронизируем HSV слайдеры под загруженные цвета
+            SyncValueHSVFromHex();
+            SyncLabelHSVFromHex();
+            UpdateBgTexture();
+        }
+
+        public Color ParseColor(string hex, Color defaultColor)
+        {
+            if (string.IsNullOrEmpty(hex)) return defaultColor;
+
+            string formattedHex = hex.Trim();
+            if (!formattedHex.StartsWith("#")) formattedHex = "#" + formattedHex;
+
+            if (ColorUtility.TryParseHtmlString(formattedHex, out Color parsed))
+            {
+                return parsed;
+            }
+            return defaultColor;
+        }
+
+        // Храним HSV состояния внутри модуля, чтобы GUI не зацикливался
+        public float ValueH = 0.5f, ValueS = 1f, ValueV = 1f, ValueA = 1f;
+        public float LabelH = 0.5f, LabelS = 1f, LabelV = 1f, LabelA = 1f;
+
+        public void SyncValueHSVFromHex()
+        {
+            if (ColorUtility.TryParseHtmlString(ValueHex, out Color c))
+            {
+                Color.RGBToHSV(c, out ValueH, out ValueS, out ValueV);
+                ValueA = c.a;
+            }
+        }
+
+        public void SyncLabelHSVFromHex()
+        {
+            if (ColorUtility.TryParseHtmlString(LabelHex, out Color c))
+            {
+                Color.RGBToHSV(c, out LabelH, out LabelS, out LabelV);
+                LabelA = c.a;
+            }
+        }
+
+        public static string ColorToHex(Color color, bool includeAlpha = false)
+        {
+            byte r = (byte)Mathf.Clamp((int)(color.r * 255f), 0, 255);
+            byte g = (byte)Mathf.Clamp((int)(color.g * 255f), 0, 255);
+            byte b = (byte)Mathf.Clamp((int)(color.b * 255f), 0, 255);
+
+            if (includeAlpha)
+            {
+                byte a = (byte)Mathf.Clamp((int)(color.a * 255f), 0, 255);
+                return $"#{r:X2}{g:X2}{b:X2}{a:X2}";
+            }
+
+            return $"#{r:X2}{g:X2}{b:X2}";
         }
 
         public void UpdateBgTexture()
         {
             if (bgTexture == null) bgTexture = new Texture2D(1, 1);
-            bgTexture.SetPixel(0, 0, new Color(0f, 0f, 0f, BgOpacity));
+
+            Color bgColor = ParseColor(BgHex, Color.black);
+            bgColor.a = BgOpacity;
+
+            bgTexture.SetPixel(0, 0, bgColor);
             bgTexture.Apply();
         }
 
         public void FindPlayerRanksSO()
         {
-            // Классы, в которых игра может держать реальный runtime XP
             string[] targetClasses = new string[]
             {
-        "runpro.PlayerRanks, Assembly-CSharp",
-        "runpro.RankManager, Assembly-CSharp",
-        "runpro.SO.PlayerRanksSO, Assembly-CSharp"
+                "runpro.PlayerRanks, Assembly-CSharp",
+                "runpro.RankManager, Assembly-CSharp",
+                "runpro.SO.PlayerRanksSO, Assembly-CSharp"
             };
 
             foreach (string className in targetClasses)
@@ -70,10 +166,8 @@ namespace SpeedrunToolkitMod
                 var found = Resources.FindObjectsOfTypeAll(type);
                 if (found != null && found.Length > 0)
                 {
-                    // Берем самый последний активный инстанс на сцене
                     ranksTargetObj = found[found.Length - 1];
 
-                    // Ищем подходящее поле XP
                     var fields = type.GetFields();
                     foreach (var f in fields)
                     {
@@ -135,7 +229,6 @@ namespace SpeedrunToolkitMod
                 ToggleNativeSpeedometer(true);
             }
 
-            // Периодически обновляем инстанс XP для работы в реальном времени при беге
             if (Time.frameCount % 60 == 0)
             {
                 FindPlayerRanksSO();
@@ -150,13 +243,26 @@ namespace SpeedrunToolkitMod
             }
 
             Vector3 currentPos = playerObj.transform.position;
-            if (lastPosition != Vector3.zero && Time.deltaTime > 0)
+            Vector3 horizontalDelta = new Vector3(currentPos.x - lastPosition.x, 0f, currentPos.z - lastPosition.z);
+            float sqrDist = horizontalDelta.sqrMagnitude;
+
+            // Регистрация движения строго при смене координат
+            if (sqrDist > 0.0001f)
             {
-                Vector3 horizontalDelta = new Vector3(currentPos.x - lastPosition.x, 0, currentPos.z - lastPosition.z);
-                float targetSpeed = horizontalDelta.magnitude / Time.deltaTime;
-                currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, Time.deltaTime * 10f);
+                float timePassed = Time.time - lastPosTime;
+                if (timePassed > 0f)
+                {
+                    float realSpeed = Mathf.Sqrt(sqrDist) / timePassed;
+                    currentSpeed = Mathf.Lerp(currentSpeed, realSpeed, Time.deltaTime * 12f);
+                }
+                lastPosition = currentPos;
+                lastPosTime = Time.time;
             }
-            lastPosition = currentPos;
+            else if (Time.time - lastPosTime > 0.12f)
+            {
+                // Если игрок не двигается дольше 120мс — гасим скорость до 0
+                currentSpeed = Mathf.Lerp(currentSpeed, 0f, Time.deltaTime * 10f);
+            }
         }
 
         private void FindPlayer()
@@ -177,6 +283,11 @@ namespace SpeedrunToolkitMod
             if (player != null)
             {
                 playerObj = player;
+
+                // Пробуем зацепить физические компоненты игрока
+                playerRb = player.GetComponent<Rigidbody>() ?? player.GetComponentInChildren<Rigidbody>();
+                playerCc = player.GetComponent<CharacterController>() ?? player.GetComponentInChildren<CharacterController>();
+
                 lastPosition = player.transform.position;
             }
         }
@@ -202,25 +313,25 @@ namespace SpeedrunToolkitMod
             GUIStyle labelStyle = new GUIStyle();
             labelStyle.fontSize = FontSize;
             labelStyle.fontStyle = FontStyle;
-            labelStyle.normal.textColor = Color.white;
+            labelStyle.normal.textColor = ParseColor(LabelHex, Color.white);
 
             GUIStyle valStyle = new GUIStyle(labelStyle);
-            valStyle.normal.textColor = Colors[ColorIndex];
+            valStyle.normal.textColor = ParseColor(ValueHex, new Color(0f, 0.9f, 1f));
 
             float currentY = HudY + 6f;
 
             if (ShowSpeed)
             {
-                GUI.Label(new Rect(HudX + 10f, currentY, width * 0.4f, lineHeight), "Speed:", labelStyle);
-                GUI.Label(new Rect(HudX + width * 0.35f, currentY, width * 0.6f, lineHeight), $"{currentSpeed:F2} u/s", valStyle);
+                GUI.Label(new Rect(HudX + LabelOffsetX, currentY, width * 0.4f, lineHeight), "Speed:", labelStyle);
+                GUI.Label(new Rect(HudX + ValueOffsetX, currentY, width * 0.6f, lineHeight), $"{currentSpeed:F2} u/s", valStyle);
                 currentY += lineHeight;
             }
 
             if (ShowCoords)
             {
                 Vector3 pos = playerObj.transform.position;
-                GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "Pos:", labelStyle);
-                GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.7f, lineHeight), $"X:{pos.x:F1}  Y:{pos.y:F1}  Z:{pos.z:F1}", valStyle);
+                GUI.Label(new Rect(HudX + LabelOffsetX, currentY, width * 0.3f, lineHeight), "Pos:", labelStyle);
+                GUI.Label(new Rect(HudX + ValueOffsetX, currentY, width * 0.7f, lineHeight), $"X:{pos.x:F1}  Y:{pos.y:F1}  Z:{pos.z:F1}", valStyle);
                 currentY += lineHeight;
             }
 
@@ -233,8 +344,8 @@ namespace SpeedrunToolkitMod
                     float pitch = rot.x > 180f ? rot.x - 360f : rot.x;
                     float yaw = rot.y;
 
-                    GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "Look:", labelStyle);
-                    GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.75f, lineHeight), $"P:{pitch:F2}°  Y:{yaw:F2}°", valStyle);
+                    GUI.Label(new Rect(HudX + LabelOffsetX, currentY, width * 0.3f, lineHeight), "Look:", labelStyle);
+                    GUI.Label(new Rect(HudX + ValueOffsetX, currentY, width * 0.75f, lineHeight), $"P:{pitch:F2}°  Y:{yaw:F2}°", valStyle);
                     currentY += lineHeight;
                 }
             }
@@ -259,8 +370,8 @@ namespace SpeedrunToolkitMod
                 int currentProgress = totalExp - minExp;
                 int neededForNext = nextExp - minExp;
 
-                GUI.Label(new Rect(HudX + 10f, currentY, width * 0.3f, lineHeight), "XP:", labelStyle);
-                GUI.Label(new Rect(HudX + width * 0.25f, currentY, width * 0.75f, lineHeight), $"Lvl {level} ({currentProgress}/{neededForNext})", valStyle);
+                GUI.Label(new Rect(HudX + LabelOffsetX, currentY, width * 0.3f, lineHeight), "XP:", labelStyle);
+                GUI.Label(new Rect(HudX + ValueOffsetX, currentY, width * 0.75f, lineHeight), $"Lvl {level} ({currentProgress}/{neededForNext})", valStyle);
             }
         }
     }

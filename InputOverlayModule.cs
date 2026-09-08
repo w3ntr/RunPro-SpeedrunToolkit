@@ -71,7 +71,6 @@ namespace SpeedrunToolkitMod
 
         private void InitTextures()
         {
-            // Если текстуры удалились из памяти Unity, создаем их заново
             if (texturesInitialized && normalTex != null && activeTex != null) return;
 
             if (normalTex != null) UnityEngine.Object.Destroy(normalTex);
@@ -101,18 +100,20 @@ namespace SpeedrunToolkitMod
             float keySize = 40f * Scale;
             float gap = 4f * Scale;
 
-            // Клавиши движения
+            // Клавиши движения и перезапуска
             bool w = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow);
             bool a = Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow);
             bool s = Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow);
             bool d = Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow);
+            bool r = Input.GetKey(KeyCode.R); // Клавиша R
 
             // Действия
             bool space = Input.GetKey(KeyCode.Space);
             bool lmb = Input.GetMouseButton(0);
 
-            // 1. Кнопка W
+            // 1. Кнопки верхнего ряда (W и R)
             DrawKey(new Rect(PosX + keySize + gap, PosY, keySize, keySize), "W", w);
+            DrawKey(new Rect(PosX + (keySize + gap) * 2, PosY, keySize, keySize), "R", r);
 
             // 2. Кнопки A, S, D
             float row1Y = PosY + keySize + gap;
@@ -120,12 +121,12 @@ namespace SpeedrunToolkitMod
             DrawKey(new Rect(PosX + keySize + gap, row1Y, keySize, keySize), "S", s);
             DrawKey(new Rect(PosX + (keySize + gap) * 2, row1Y, keySize, keySize), "D", d);
 
-            // 3. LMB (высокая кнопка мыши)
+            // 3. LMB (высокая кнопка мыши справа от R/D)
             float lmbWidth = keySize * 1.2f;
             float lmbHeight = (keySize * 2f) + gap;
             DrawKey(new Rect(PosX + (keySize + gap) * 3 + gap, PosY, lmbWidth, lmbHeight), "LMB", lmb);
 
-            // 4. SPACE (широкая плашка)
+            // 4. SPACE (широкая плашка снизу)
             float row2Y = PosY + (keySize + gap) * 2;
             float spaceWidth = (keySize * 3f) + (gap * 2f);
             DrawKey(new Rect(PosX, row2Y, spaceWidth, keySize * 0.8f), "SPACE", space);
@@ -136,7 +137,6 @@ namespace SpeedrunToolkitMod
             GUIStyle style = new GUIStyle(GUI.skin.box);
             style.normal.background = isActive ? activeTex : normalTex;
 
-            // Динамический выбор цвета текста (черный для светлых клавиш, белый для темных)
             Color currentCol = isActive ? PresetColors[ActiveColorIndex] : PresetColors[NormalColorIndex];
             bool isLight = (currentCol.r * 0.3f + currentCol.g * 0.59f + currentCol.b * 0.11f) > 0.6f;
             style.normal.textColor = isLight ? Color.black : Color.white;
@@ -162,7 +162,6 @@ namespace SpeedrunToolkitMod
 
             if (!IsEnabled) return;
 
-            // Выбор цвета активных и неактивных клавиш
             if (GUI.Button(new Rect(startX, startY + 45, width, 22), $"Active Color: [{ColorNames[ActiveColorIndex]}]"))
             {
                 ActiveColorIndex = (ActiveColorIndex + 1) % PresetColors.Length;
@@ -179,7 +178,6 @@ namespace SpeedrunToolkitMod
                 RefreshTextures();
             }
 
-            // Настройки масштаба и позиции
             GUI.Label(new Rect(startX, startY + 95, width, 20), $"Scale: {Scale:F1}x");
             float newScale = GUI.HorizontalSlider(new Rect(startX, startY + 115, width, 15), Scale, 0.6f, 2.0f);
             if (Mathf.Abs(newScale - Scale) > 0.05f)

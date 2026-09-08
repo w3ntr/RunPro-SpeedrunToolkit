@@ -1,6 +1,9 @@
-using UnityEngine;
-using System.Reflection;
+using Il2Cpp;
+using HarmonyLib;
 using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace SpeedrunToolkitMod
 {
@@ -12,6 +15,8 @@ namespace SpeedrunToolkitMod
         {
             public Vector3 position;
             public Vector3 velocity;
+            public float pitch;
+            public float yaw;
             public bool isValid;
         }
 
@@ -38,7 +43,6 @@ namespace SpeedrunToolkitMod
         public void OnSceneWasLoaded(string sceneName)
         {
             ResetAllCheckpoints("Scene loaded");
-            ResetGravity();
             hasSpawnPosition = false;
         }
 
@@ -51,27 +55,6 @@ namespace SpeedrunToolkitMod
             return false;
         }
 
-        public void SetGravityScale(float scale)
-        {
-            GravityScale = scale;
-            Physics.gravity = new Vector3(0f, -9.81f * scale, 0f);
-
-            if (!Mathf.Approximately(scale, 1.0f))
-            {
-                BlockFinishAndTimer();
-            }
-            else
-            {
-                CheckAndRestoreIfClean();
-            }
-        }
-
-        public void ResetGravity()
-        {
-            GravityScale = 1.0f;
-            Physics.gravity = new Vector3(0f, -9.81f, 0f);
-            CheckAndRestoreIfClean();
-        }
 
         public void ResetCurrentCheckpoint()
         {
@@ -123,6 +106,12 @@ namespace SpeedrunToolkitMod
                 spawnPosition = playerObj.transform.position;
                 hasSpawnPosition = true;
             }
+
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                if (ChatUtils.IsChatFocused()) return;
+                LoadPlayerPosition();
+            }
         }
 
         private void FindPlayer()
@@ -142,6 +131,54 @@ namespace SpeedrunToolkitMod
             if (player != null) playerObj = player;
         }
 
+        public static class ChatUtils
+        {
+            public static bool IsChatFocused()
+            {
+                var es = EventSystem.current;
+                if (es != null && es.currentSelectedGameObject != null)
+                {
+                    var input = es.currentSelectedGameObject.GetComponent<UnityEngine.UI.InputField>();
+                    if (input != null && input.isFocused) return true;
+                }
+
+                var chat = Object.FindObjectOfType<CanvasTextChat>();
+                if (chat != null && chat.txtInput != null && chat.txtInput.isFocused)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(Input), nameof(Input.GetKeyDown), new System.Type[] { typeof(KeyCode) })]
+        public static class InputChatBlock_Patch
+        {
+            private static CanvasTextChat cachedChat;
+            private static float lastSearchTime;
+
+            [HarmonyPrefix]
+            public static bool Prefix(KeyCode key, ref bool __result)
+            {
+                if (key != KeyCode.R) return true;
+
+                if (cachedChat == null || Time.unscaledTime - lastSearchTime > 1.0f)
+                {
+                    cachedChat = Object.FindObjectOfType<CanvasTextChat>();
+                    lastSearchTime = Time.unscaledTime;
+                }
+
+                if (cachedChat != null && cachedChat.txtInput != null && cachedChat.txtInput.isFocused)
+                {
+                    __result = false;
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
         public void SavePlayerPosition()
         {
             if (playerObj == null) FindPlayer();
@@ -151,10 +188,25 @@ namespace SpeedrunToolkitMod
             Rigidbody rb = playerObj.GetComponent<Rigidbody>();
             if (rb != null) vel = rb.velocity;
 
+            float pitch = 0f;
+            float yaw = playerObj.transform.eulerAngles.y;
+
+            Camera cam = Camera.main;
+            if (cam == null) cam = playerObj.GetComponentInChildren<Camera>();
+
+            if (cam != null)
+            {
+                Vector3 rot = cam.transform.eulerAngles;
+                pitch = rot.x > 180f ? rot.x - 360f : rot.x;
+                yaw = rot.y;
+            }
+
             slots[currentSlotIndex] = new Checkpoint
             {
                 position = playerObj.transform.position,
                 velocity = vel,
+                pitch = pitch,
+                yaw = yaw,
                 isValid = true
             };
 
@@ -165,7 +217,7 @@ namespace SpeedrunToolkitMod
         {
             if (!CurrentSlot.isValid || playerObj == null) return;
 
-            TeleportPlayer(CurrentSlot.position, CurrentSlot.velocity);
+            TeleportPlayer(CurrentSlot.position, CurrentSlot.velocity, CurrentSlot.pitch, CurrentSlot.yaw, true);
             BlockFinishAndTimer();
         }
 
@@ -173,7 +225,7 @@ namespace SpeedrunToolkitMod
         {
             if (!hasSpawnPosition || playerObj == null) return;
 
-            TeleportPlayer(spawnPosition, Vector3.zero);
+            TeleportPlayer(spawnPosition, Vector3.zero, 0f, 0f, false);
         }
 
         public void TeleportToCrosshair()
@@ -182,17 +234,18 @@ namespace SpeedrunToolkitMod
             if (playerObj == null) return;
 
             Camera cam = Camera.main;
+            if (cam == null) cam = playerObj.GetComponentInChildren<Camera>();
             if (cam == null) return;
 
             if (Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, 1000f))
             {
                 Vector3 targetPos = hit.point + hit.normal * 0.2f + Vector3.up * 0.8f;
-                TeleportPlayer(targetPos, Vector3.zero);
+                TeleportPlayer(targetPos, Vector3.zero, 0f, 0f, false);
                 BlockFinishAndTimer();
             }
         }
 
-        private void TeleportPlayer(Vector3 pos, Vector3 vel)
+        private void TeleportPlayer(Vector3 pos, Vector3 vel, float pitch, float yaw, bool applyAngles)
         {
             playerObj.transform.position = pos;
 
@@ -201,6 +254,58 @@ namespace SpeedrunToolkitMod
             {
                 rb.velocity = vel;
                 rb.angularVelocity = Vector3.zero;
+            }
+
+            if (!applyAngles) return;
+
+            // 1. Применяем повороты к объектам сцены
+            playerObj.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+
+            Camera cam = Camera.main;
+            if (cam == null) cam = playerObj.GetComponentInChildren<Camera>();
+
+            if (cam != null)
+            {
+                cam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+            }
+
+            // 2. Инициализируем m_MouseLook, чтобы сбросить целевые кватернионы в контроллере
+            var fps = playerObj.GetComponent<Il2Cpp.FirstPersonController>();
+            if (fps != null)
+            {
+                try
+                {
+                    fps.m_YRotation = yaw;
+                }
+                catch { }
+
+                var mouseLook = fps.m_MouseLook;
+                if (mouseLook != null && cam != null)
+                {
+                    try
+                    {
+                        mouseLook.Init(playerObj.transform, cam.transform);
+                    }
+                    catch
+                    {
+                        // Резервная рефлексия для кастомных сборок
+                        BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                        Quaternion charRot = playerObj.transform.localRotation;
+                        Quaternion camRot = cam.transform.localRotation;
+
+                        foreach (var f in mouseLook.GetType().GetFields(flags))
+                        {
+                            if (f.FieldType == typeof(Quaternion))
+                            {
+                                string fName = f.Name.ToLower();
+                                if (fName.Contains("char") || fName.Contains("player") || fName.Contains("body"))
+                                    f.SetValue(mouseLook, charRot);
+                                else if (fName.Contains("cam") || fName.Contains("head"))
+                                    f.SetValue(mouseLook, camRot);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -217,7 +322,6 @@ namespace SpeedrunToolkitMod
                 string gName = go.name.ToLower();
                 string typeName = mono.GetType().Name.ToLower();
 
-                // Пропускаем камеры, игрока, ввод и элементы интерфейса
                 if (go.CompareTag("MainCamera") || go.CompareTag("Player") ||
                     go.GetComponent<Camera>() != null ||
                     gName.Contains("camera") || gName.Contains("player") || gName.Contains("canvas") || gName.Contains("hud") ||
