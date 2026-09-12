@@ -4,7 +4,7 @@
 ![Unity Version](https://img.shields.io/badge/Unity-2021%2B-blue)
 ![Status](https://img.shields.io/badge/Status-Release-brightgreen)
 
-**Speedrun Toolkit** is an advanced, modular software framework designed for route analysis, mechanic practice, physics stabilization, and real-time telemetry display in **Run Pro**. Built on **MelonLoader (.NET 6 / IL2CPP)**, the toolkit provides comprehensive tools ranging from deterministic physics patching to memory-based state manipulation.
+**Speedrun Toolkit** is an advanced, modular software framework designed for route analysis, mechanic practice, physics stabilization, graphic customization, and real-time telemetry display in **Run Pro**. Built on **MelonLoader (.NET 6 / IL2CPP)**, the toolkit provides comprehensive tools ranging from deterministic physics patching to memory-based state manipulation.
 
 ---
 
@@ -45,7 +45,7 @@
   * **Pink:** `RGBA(0.90, 0.30, 0.90, 0.85)`
   * **White:** `RGBA(1.00, 1.00, 1.00, 0.85)`
   * **Dark Translucent:** `RGBA(0.10, 0.10, 0.10, 0.50)`
-  * **Gray:** `RGBA(0.30, 0.30, 0.30, 0.70)`
+  * **Gray:** `RGBA(0.30, 0.30, 0.70, 0.70)`
 * **Transform Controls:** Full dynamic scaling (0.6x - 2.0x) and absolute screen-space coordinate positioning.
 
 ### Physics Patching and Determinism
@@ -54,9 +54,20 @@
 * **Visual Helpers:** Optional rendering of vector flight trajectories and interactive trigger bounds.
 * **Anti-Abuse Verification:** Automatically invalidates and disables level completion triggers if physics constants exceed non-standard values.
 
+### Graphics and Performance Optimization
+* **Ultra Potato Resolution Presets:** Quick hardware-downscaling toggles including 480p Fullscreen, 480p Windowed, and extreme pixel render targets (320x240 4:3 and 320x180 16:9).
+* **Custom Skybox Manager:** Dynamic cycling between native scene skyboxes, solid black background, and external custom skybox images (`.png` / `.jpg`) loaded from disk.
+* **Draw & Shadow Distance Override:** Independent distance control sliders allowing custom Camera Render Distance (50m - 3000m) and Shadow Distance (0m - 500m).
+* **Rendering Pipelines Toggles:** Ability to independently disable Post-Processing (Bloom, FX) and global shadows for maximum framerate stability.
+* **FPS Limiter & Presets:** Granular target frame rate input with standard high-refresh rate presets (Max, 60, 120, 144, 240, 360 FPS).
+* **Texture Downscaling & Interface Cleaners:** Texture resolution scaling (High, Medium, Low) along with toggles to hide first-person hand meshes and the native game HUD.
+* **Dark Mode GUI Theme:** Dark interface overlay style with adaptive dynamic UI scroll height calculation.
+
 ### Audio and Custom Music Replacer
-* **Independent Audio Stream:** Custom audio manager running on a separate interface layer (.mp3, .wav).
-* **Playback Utilities:** Automatic track scanning from directory, real-time volume management, playback speed/pitch adjustment (0.50x - 2.00x), and playback modes (Sequential, Shuffle, Loop).
+* **Independent Audio Manager:** Background audio controller capable of scanning, loading, and replacing game tracks with local `.mp3` and `.wav` audio files.
+* **Pitch and Speed Modifier:** Dynamic playback pitch and speed manipulation ranging from 0.50x to 2.00x in real-time.
+* **Playback Modes:** Flexible track sequencing including Selected Track mode, Name-based matching, and Shuffle mode.
+* **Master Volume & Real-time Scan:** Smooth volume scaling slider and live directory rescan functionality without restarting the application.
 
 ### Time Dilation (Slomo)
 * **Scale Modifier:** Adjusts global engine time scale (0.25x - 1.00x) for frame-perfect input practice and movement analysis.
@@ -68,7 +79,7 @@
 
 | Action | Keybinding | Module Context |
 | :--- | :---: | :--- |
-| **Toggle Toolkit Menu** | `F8` / `Z` | Global Interface |
+| **Toggle Toolkit Menu** | `F8` | Global Interface |
 | **Toggle Custom Music Player** | `F7` | Audio Module |
 | **Toggle Tung Tung Model** | `F7` | Model Module |
 | **Save Checkpoint State** | `F9` | Practice Module |
@@ -92,13 +103,16 @@ Run Pro/
 ├── Mods/
 │   └── SpeedrunToolkit.dll
 └── UserData/
-    ├── SpeedrunToolkit/
-    ├── ── ├── tungtung.obj      (Optional 3D Model Mesh)
-    |      └── tungtung.png      (Optional 3D Model Texture)
-    |
-    └── CustomMusic/     (Optional Audio Folder)
-            ├── track1.wav
-            └── track2.wav
+    ├── CustomMusic/             (Local Audio Files: .wav, .mp3)
+    │   ├── track1.mp3
+    │   └── track2.wav
+    │
+    ├── CustomSkyboxes/          (Custom Skybox Images: .png, .jpg)
+    │   └── skybox1.png
+    │
+    └── SpeedrunToolkit/         (3D Model & Texture Assets)
+        ├── tungtung.obj
+        └── tungtung.pngwav
 ```
 
 ## Screenshots:
@@ -138,13 +152,15 @@ Run Pro/
 
 2. Obtain SpeedrunToolkit.dll from the official repository release section.
 
-3. Place SpeedrunToolkit.dll into the Run Pro/Mods/ folder.
+3. Place SpeedrunToolkit.dll into the Run Pro/Mods/ directory.
 
-4. (Optional) Place custom audio assets (.wav or .mp3) in UserData/SpeedrunToolkit/CustomMusic/.
+4. (Optional) Place custom audio assets (.wav or .mp3) into UserData/CustomMusic/.
 
-5. (Optional) Place custom mesh assets (tungtung.obj, tungtung.png) in UserData/SpeedrunToolkit/.
+5. (Optional) Place custom skybox textures (.png or .jpg) into UserData/CustomSkyboxes/.
 
-6. Launch the executable. Configuration files will automatically generate in UserData/MelonPreferences.cfg.
+6. (Optional) Place custom mesh assets (tungtung.obj, tungtung.png) into UserData/SpeedrunToolkit/.
+
+7. Launch the executable. Configuration files will automatically generate in UserData/MelonPreferences.cfg.
 
 ## Technical Specifications
 
@@ -152,6 +168,8 @@ Run Pro/
 
 - Modding Environment: MelonLoader v0.6.0+
 
-- GUI Subsystem: Unity IMGUI (UnityEngine.IMGUIModule)
+- GUI Subsystem: Unity IMGUI (UnityEngine.IMGUIModule) with unified viewport scroll handling
 
 - Interop Layer: Il2CppInterop / HarmonyLib
+
+- GUI Subsystem: Unity IMGUI (UnityEngine.IMGUIModule)
