@@ -119,29 +119,28 @@ Run Pro/
 
 ![Info](info.png) 
 *The Info of Mod.*
-![HUD & Model](hudandmodel.png)
+![HUD & Model](hud&model.png)
 *Hud and Model (Tung Tung Tung Sahur)*
 ![Practice](practice.png)
 *Practice Functions (Also keybind [T] - Teleport)*
 ![Death Zones Visualizer](death.png)
 ![Death Zones Visualizer](screenshot5.png)
-![Death Zones Visualizer](screenshot4.png)
-![Death Zones Visualizer](screenshot3.png)
-![Death Zones Visualizer](screenshot2.png)
-![Death Zones Visualizer](screenshot1.png)
+![Death Zones Visualizer](xray&wireframe.png)
+![Death Zones Visualizer](xray.png)
+![Death Zones Visualizer](color.png)
+![Death Zones Visualizer](colorr.png)
 *Death Zone triggers highlighted in X-Ray mode* 
 ![FOV](fov.png)
 *FOV - 60-140*
 ![Input](input.png)
 *Deep input customization with colors, font, and position*
 ![Graphics](graphics.png)
-![Graphics](graphics2.png)
 *Deep graphics customization, allowing you to change the Skybox as well*
 ![Music](music.png)
 *Custom Music Replacer*
 ![Movement](movement.png)
 *Fun tab*
-![Fix & QoL](fixandqol.png)
+![Fix & QoL](fix&qol.png)
 *Fixing and improving the game's physics*
 ![Slomo](slomo.png)
 *Slomo*
