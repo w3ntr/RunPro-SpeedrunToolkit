@@ -1,5 +1,6 @@
 ﻿using System;
 using UnityEngine;
+using MelonLoader;
 
 namespace SpeedrunToolkitMod
 {
@@ -17,11 +18,37 @@ namespace SpeedrunToolkitMod
 
         private Action<int> currentContentAction;
 
+        // --- Сохранение настроек окна через MelonPreferences ---
+        private MelonPreferences_Entry<float> prefWindowX;
+        private MelonPreferences_Entry<float> prefWindowY;
+        private MelonPreferences_Entry<float> prefWindowW;
+        private MelonPreferences_Entry<float> prefWindowH;
+
+        public void Init(MelonPreferences_Category category)
+        {
+            prefWindowX = category.CreateEntry("WindowX", 200f);
+            prefWindowY = category.CreateEntry("WindowY", 150f);
+            prefWindowW = category.CreateEntry("WindowWidth", 620f);
+            prefWindowH = category.CreateEntry("WindowHeight", 560f);
+
+            WindowRect = new Rect(prefWindowX.Value, prefWindowY.Value, prefWindowW.Value, prefWindowH.Value);
+        }
+
+        public void SaveConfig()
+        {
+            if (prefWindowX == null) return;
+            prefWindowX.Value = WindowRect.x;
+            prefWindowY.Value = WindowRect.y;
+            prefWindowW.Value = WindowRect.width;
+            prefWindowH.Value = WindowRect.height;
+        }
+
         public void ResetWindow()
         {
             float w = 620f;
             float h = 560f;
             WindowRect = new Rect((Screen.width - w) / 2f, (Screen.height - h) / 2f, w, h);
+            SaveConfig();
         }
 
         public void Draw(string title, Action<int> windowContent)
@@ -33,7 +60,14 @@ namespace SpeedrunToolkitMod
 
             currentContentAction = windowContent;
 
+            Rect oldRect = WindowRect;
             WindowRect = GUI.Window(WindowID, WindowRect, (Action<int>)WindowCallback, title, UITheme.WindowStyle);
+
+            // Сохраняем позицию или размер, если окно переместили/изменили и отпустили кнопку мыши
+            if (Event.current.type == EventType.MouseUp && (oldRect.position != WindowRect.position || oldRect.size != WindowRect.size))
+            {
+                SaveConfig();
+            }
         }
 
         private void WindowCallback(int id)
@@ -53,7 +87,6 @@ namespace SpeedrunToolkitMod
             GUI.Label(resizeHandleRect, "◢", UITheme.ResizeHandleStyle);
 
             Event currentEvent = Event.current;
-            // Экранные координаты мыши (Y инвертирован в Unity IMGUI)
             Vector2 mouseScreenPosition = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
 
             if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(currentEvent.mousePosition))
@@ -69,6 +102,7 @@ namespace SpeedrunToolkitMod
                 if (Input.GetMouseButtonUp(0))
                 {
                     isResizing = false;
+                    SaveConfig();
                 }
                 else
                 {

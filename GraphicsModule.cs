@@ -1,10 +1,14 @@
 ﻿using MelonLoader;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.PostProcessing;
+using UnityEngine.SceneManagement;
 
 namespace SpeedrunToolkitMod
 {
@@ -111,6 +115,18 @@ namespace SpeedrunToolkitMod
             ScanCustomSkyboxes();
 
             MelonLogger.Msg("[Graphics] Module initialized.");
+        }
+
+        public void OnSceneLoaded()
+        {
+            MelonCoroutines.Start(ApplyHandsDelayed());
+        }
+
+        private IEnumerator ApplyHandsDelayed()
+        {
+            // Ждем 0.2 сек., пока игра создаст персонажа на новой карте
+            yield return new WaitForSeconds(0.2f);
+            ApplyHandsSettings();
         }
 
         public void OnUpdate()
@@ -412,7 +428,7 @@ namespace SpeedrunToolkitMod
             QualitySettings.particleRaycastBudget = 0;
             QualitySettings.lodBias = 0.01f;
 
-            foreach (var light in Object.FindObjectsOfType<Light>())
+            foreach (var light in UnityEngine.Object.FindObjectsOfType<Light>())
             {
                 if (light != null && light.enabled)
                 {
@@ -444,7 +460,7 @@ namespace SpeedrunToolkitMod
 
             if (shader == null)
             {
-                var anyRenderer = Object.FindObjectOfType<MeshRenderer>();
+                var anyRenderer = UnityEngine.Object.FindObjectOfType<MeshRenderer>();
                 if (anyRenderer != null && anyRenderer.sharedMaterial != null)
                 {
                     shader = anyRenderer.sharedMaterial.shader;
@@ -511,7 +527,7 @@ namespace SpeedrunToolkitMod
 
         public void AnnihilateParticles()
         {
-            foreach (var ps in Object.FindObjectsOfType<ParticleSystem>())
+            foreach (var ps in UnityEngine.Object.FindObjectsOfType<ParticleSystem>())
             {
                 ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
                 ps.gameObject.SetActive(false);
@@ -529,13 +545,15 @@ namespace SpeedrunToolkitMod
                 flatMaterial.color = new Color(0.65f, 0.65f, 0.65f, 1f);
             }
 
-            Renderer[] renderers = Object.FindObjectsOfType<Renderer>();
+            Renderer[] renderers = UnityEngine.Object.FindObjectsOfType<Renderer>();
             foreach (var r in renderers)
             {
                 if (r == null || !r.enabled || r is ParticleSystemRenderer) continue;
 
                 string name = r.gameObject.name.ToLower();
-                if (name.Contains("player") || name.Contains("canvas") || name.Contains("hud") || name.Contains("sky")) continue;
+                if (name.Contains("player") || name.Contains("canvas") || name.Contains("hud") ||
+                    name.Contains("sky") || name.Contains("hand") || name.Contains("arm") || name.Contains("weapon"))
+                    continue;
 
                 if (!savedOriginalMaterials.ContainsKey(r))
                 {
@@ -603,22 +621,31 @@ namespace SpeedrunToolkitMod
         public void ApplyHandsSettings()
         {
             Camera mainCam = Camera.main;
-            if (mainCam != null)
+            if (mainCam == null) return;
+
+            Renderer[] renderers = mainCam.GetComponentsInChildren<Renderer>(true);
+            foreach (var rend in renderers)
             {
-                Renderer[] renderers = mainCam.GetComponentsInChildren<Renderer>(true);
-                foreach (var rend in renderers)
+                if (rend == null || rend.gameObject == mainCam.gameObject) continue;
+
+                string name = rend.gameObject.name.ToLower();
+
+                // Фильтруем и скрываем остатки старых ассетов Parkour Craft
+                if (name.Contains("craft") || name.Contains("block") || name.Contains("old") || name.Contains("legacy"))
                 {
-                    if (rend != null && rend.gameObject != mainCam.gameObject)
-                    {
-                        rend.enabled = !HideHands;
-                    }
+                    rend.enabled = false;
+                    rend.gameObject.SetActive(false);
+                    continue;
                 }
+
+                // Включаем/отключаем отображение рук в зависимости от HideHands
+                rend.enabled = !HideHands;
             }
         }
 
         public void ApplyGameHUDSettings()
         {
-            Canvas[] canvases = Object.FindObjectsOfType<Canvas>();
+            Canvas[] canvases = UnityEngine.Object.FindObjectsOfType<Canvas>();
             foreach (var canvas in canvases)
             {
                 if (canvas != null)
@@ -628,69 +655,40 @@ namespace SpeedrunToolkitMod
             }
         }
 
-        public void DrawUI(float startX, float startY, float width)
+        public float DrawUI(float startX, float startY, float width)
         {
-            scrollPosition = GUI.BeginScrollView(
-                new Rect(startX, startY, width, 310f),
-                scrollPosition,
-                new Rect(0, 0, width - 20f, 580f)
-            );
-
-            float y = 5f;
-            float contentWidth = width - 25f;
+            float y = startY + 5f;
+            float contentWidth = width - 10f;
 
             string potatoBtnText = isPotatoMode ? "⚡ RESTORE NORMAL GRAPHICS" : "🔥 ENABLE ULTRA POTATO MODE";
-            if (GUI.Button(new Rect(0, y, contentWidth, 25f), potatoBtnText))
+            if (GUI.Button(new Rect(startX, y, contentWidth, 25f), potatoBtnText))
             {
-                if (isPotatoMode)
-                {
-                    RestoreDefaultGraphics();
-                }
-                else
-                {
-                    ApplyUltraPotatoMode();
-                }
+                if (isPotatoMode) RestoreDefaultGraphics();
+                else ApplyUltraPotatoMode();
             }
             y += 30f;
 
-            GUI.Label(new Rect(0, y, contentWidth, 18f), "<b>Potato Resolution Presets:</b>");
+            GUI.Label(new Rect(startX, y, contentWidth, 18f), "<b>Potato Resolution Presets:</b>");
             y += 20f;
 
             float thirdWidth = (contentWidth - 10f) / 3f;
-            if (GUI.Button(new Rect(0, y, thirdWidth, 22f), "🖥️ 480p Full"))
-            {
-                ApplyPotatoFullscreen();
-            }
-            if (GUI.Button(new Rect(thirdWidth + 5f, y, thirdWidth, 22f), "🔲 480p Window"))
-            {
-                ApplyPotatoWindowed();
-            }
-            if (GUI.Button(new Rect((thirdWidth * 2f) + 10f, y, thirdWidth, 22f), "🔄 Native Res"))
-            {
-                RestoreNativeResolution();
-            }
+            if (GUI.Button(new Rect(startX, y, thirdWidth, 22f), "🖥️ 480p Full")) ApplyPotatoFullscreen();
+            if (GUI.Button(new Rect(startX + thirdWidth + 5f, y, thirdWidth, 22f), "🔲 480p Window")) ApplyPotatoWindowed();
+            if (GUI.Button(new Rect(startX + (thirdWidth * 2f) + 10f, y, thirdWidth, 22f), "🔄 Native Res")) RestoreNativeResolution();
             y += 28f;
 
-            GUI.Label(new Rect(0, y, contentWidth, 18f), "<b>Extreme Pixel Resolutions:</b>");
+            GUI.Label(new Rect(startX, y, contentWidth, 18f), "<b>Extreme Pixel Resolutions:</b>");
             y += 20f;
 
             float halfWidth = (contentWidth - 5f) / 2f;
-
-            if (GUI.Button(new Rect(0, y, halfWidth, 22f), "👾 320x240 (4:3)"))
-            {
-                ApplyPotato320x240Full();
-            }
-
-            if (GUI.Button(new Rect(halfWidth + 5f, y, halfWidth, 22f), "👾 320x180 (16:9)"))
-            {
-                ApplyPotato320x180Full();
-            }
+            if (GUI.Button(new Rect(startX, y, halfWidth, 22f), "👾 320x240 (4:3)")) ApplyPotato320x240Full();
+            if (GUI.Button(new Rect(startX + halfWidth + 5f, y, halfWidth, 22f), "👾 320x180 (16:9)")) ApplyPotato320x180Full();
             y += 26f;
 
-            GUI.Label(new Rect(0, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
+            GUI.Label(new Rect(startX, y, contentWidth, 20f), "<b>Graphics & View Settings</b>");
             y += 24f;
 
-            bool newDarkMode = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableDarkMode, " Enable Dark Mode");
+            bool newDarkMode = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), EnableDarkMode, " Enable Dark Mode");
             if (newDarkMode != EnableDarkMode)
             {
                 EnableDarkMode = newDarkMode;
@@ -723,27 +721,18 @@ namespace SpeedrunToolkitMod
                 }
             }
 
-            GUI.Label(new Rect(0, y, contentWidth, 18f), $"Skybox: <b>{skyName}</b>");
+            GUI.Label(new Rect(startX, y, contentWidth, 18f), $"Skybox: <b>{skyName}</b>");
             y += 20f;
 
             float skyBtnWidth = (contentWidth - 10f) / 2f;
-            if (GUI.Button(new Rect(0, y, skyBtnWidth, 22f), "◄ Previous Sky"))
-            {
-                PreviousSkybox();
-            }
-            if (GUI.Button(new Rect(skyBtnWidth + 10f, y, skyBtnWidth, 22f), "Next Sky ►"))
-            {
-                NextSkybox();
-            }
+            if (GUI.Button(new Rect(startX, y, skyBtnWidth, 22f), "◄ Previous Sky")) PreviousSkybox();
+            if (GUI.Button(new Rect(startX + skyBtnWidth + 10f, y, skyBtnWidth, 22f), "Next Sky ►")) NextSkybox();
             y += 26f;
 
-            if (GUI.Button(new Rect(0, y, contentWidth, 22f), "📁 Rescan Custom Skyboxes Folder"))
-            {
-                ScanCustomSkyboxes();
-            }
+            if (GUI.Button(new Rect(startX, y, contentWidth, 22f), "📁 Rescan Custom Skyboxes Folder")) ScanCustomSkyboxes();
             y += 26f;
 
-            bool newPP = GUI.Toggle(new Rect(0, y, contentWidth, 20f), DisablePostProcessing, " Disable Post-Processing (Bloom, FX)");
+            bool newPP = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), DisablePostProcessing, " Disable Post-Processing (Bloom, FX)");
             if (newPP != DisablePostProcessing)
             {
                 DisablePostProcessing = newPP;
@@ -753,9 +742,9 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            GUI.Label(new Rect(0, y, 70f, 20f), "FPS Limit:");
-            fpsInputBuffer = GUI.TextField(new Rect(75f, y, 50f, 20f), fpsInputBuffer);
-            if (GUI.Button(new Rect(130f, y, 50f, 20f), "Set"))
+            GUI.Label(new Rect(startX, y, 70f, 20f), "FPS Limit:");
+            fpsInputBuffer = GUI.TextField(new Rect(startX + 75f, y, 50f, 20f), fpsInputBuffer);
+            if (GUI.Button(new Rect(startX + 130f, y, 50f, 20f), "Set"))
             {
                 if (int.TryParse(fpsInputBuffer, out int parsedFPS))
                 {
@@ -768,7 +757,7 @@ namespace SpeedrunToolkitMod
             y += 25f;
 
             int[] presets = new int[] { -1, 60, 120, 144, 240, 360 };
-            float btnX = 0f;
+            float btnX = startX;
             float presetBtnWidth = (contentWidth - 25f) / 6f;
 
             foreach (int fps in presets)
@@ -786,7 +775,7 @@ namespace SpeedrunToolkitMod
             }
             y += 25f;
 
-            bool newShadows = GUI.Toggle(new Rect(0, y, contentWidth, 20f), DisableShadows, " Disable Shadows (FPS Boost)");
+            bool newShadows = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), DisableShadows, " Disable Shadows (FPS Boost)");
             if (newShadows != DisableShadows)
             {
                 DisableShadows = newShadows;
@@ -796,7 +785,7 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            bool newCustomDist = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableCustomRenderDistance, " Enable Custom Draw Distance");
+            bool newCustomDist = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), EnableCustomRenderDistance, " Enable Custom Draw Distance");
             if (newCustomDist != EnableCustomRenderDistance)
             {
                 EnableCustomRenderDistance = newCustomDist;
@@ -808,9 +797,9 @@ namespace SpeedrunToolkitMod
 
             if (EnableCustomRenderDistance)
             {
-                GUI.Label(new Rect(0, y, contentWidth, 18f), $"Draw Distance: {(int)RenderDistance}m");
+                GUI.Label(new Rect(startX, y, contentWidth, 18f), $"Draw Distance: {(int)RenderDistance}m");
                 y += 16f;
-                float newDist = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 15f), RenderDistance, 50f, 3000f);
+                float newDist = GUI.HorizontalSlider(new Rect(startX, y, contentWidth, 15f), RenderDistance, 50f, 3000f);
                 if (Mathf.Abs(newDist - RenderDistance) > 1f)
                 {
                     RenderDistance = newDist;
@@ -820,7 +809,7 @@ namespace SpeedrunToolkitMod
                 y += 20f;
             }
 
-            bool newCustomShadow = GUI.Toggle(new Rect(0, y, contentWidth, 20f), EnableCustomShadowDistance, " Enable Custom Shadow Distance");
+            bool newCustomShadow = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), EnableCustomShadowDistance, " Enable Custom Shadow Distance");
             if (newCustomShadow != EnableCustomShadowDistance)
             {
                 EnableCustomShadowDistance = newCustomShadow;
@@ -832,9 +821,9 @@ namespace SpeedrunToolkitMod
 
             if (EnableCustomShadowDistance)
             {
-                GUI.Label(new Rect(0, y, contentWidth, 18f), $"Shadow Distance: {(int)ShadowDistance}m");
+                GUI.Label(new Rect(startX, y, contentWidth, 18f), $"Shadow Distance: {(int)ShadowDistance}m");
                 y += 16f;
-                float newShadow = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 15f), ShadowDistance, 0f, 500f);
+                float newShadow = GUI.HorizontalSlider(new Rect(startX, y, contentWidth, 15f), ShadowDistance, 0f, 500f);
                 if (Mathf.Abs(newShadow - ShadowDistance) > 1f)
                 {
                     ShadowDistance = newShadow;
@@ -844,7 +833,7 @@ namespace SpeedrunToolkitMod
                 y += 20f;
             }
 
-            bool newHands = GUI.Toggle(new Rect(0, y, contentWidth, 20f), HideHands, " Hide First-Person Hands");
+            bool newHands = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), HideHands, " Hide First-Person Hands");
             if (newHands != HideHands)
             {
                 HideHands = newHands;
@@ -854,7 +843,7 @@ namespace SpeedrunToolkitMod
             }
             y += 22f;
 
-            bool newHUD = GUI.Toggle(new Rect(0, y, contentWidth, 20f), HideGameHUD, " Hide Native Game HUD");
+            bool newHUD = GUI.Toggle(new Rect(startX, y, contentWidth, 20f), HideGameHUD, " Hide Native Game HUD");
             if (newHUD != HideGameHUD)
             {
                 HideGameHUD = newHUD;
@@ -865,7 +854,7 @@ namespace SpeedrunToolkitMod
             y += 24f;
 
             string qualityText = TextureQuality == 0 ? "High (Default)" : (TextureQuality == 1 ? "Medium (1/2)" : "Low / Potato (1/4)");
-            if (GUI.Button(new Rect(0, y, contentWidth, 22f), $"Textures: [{qualityText}]"))
+            if (GUI.Button(new Rect(startX, y, contentWidth, 22f), $"Textures: [{qualityText}]"))
             {
                 TextureQuality = (TextureQuality + 1) % 3;
                 configTextureQuality.Value = TextureQuality;
@@ -874,52 +863,53 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-            if (GUI.Button(new Rect(0, y, contentWidth, 22f), "🔄 Force Apply All Settings"))
+            if (GUI.Button(new Rect(startX, y, contentWidth, 22f), "🔄 Force Apply All Settings"))
             {
                 ApplyGraphicsSettings();
             }
+            y += 30f;
 
-            GUI.EndScrollView();
-        }
-    }
-
-    public class DistanceCuller
-    {
-        public float CullDistance = 50f;
-        public bool IsEnabled = false;
-        private Renderer[] renderersToCull;
-        private float lastCheckTime;
-
-        public void SetTargetRenderers(Renderer[] renderers)
-        {
-            renderersToCull = renderers;
+            return y - startY;
         }
 
-        public void Update()
+        public class DistanceCuller
         {
-            if (!IsEnabled || renderersToCull == null) return;
-            if (Time.unscaledTime - lastCheckTime < 0.2f) return;
-            lastCheckTime = Time.unscaledTime;
+            public float CullDistance = 50f;
+            public bool IsEnabled = false;
+            private Renderer[] renderersToCull;
+            private float lastCheckTime;
 
-            Camera mainCam = Camera.main;
-            if (mainCam == null) return;
-
-            Vector3 camPos = mainCam.transform.position;
-            float sqrDist = CullDistance * CullDistance;
-
-            foreach (var r in renderersToCull)
+            public void SetTargetRenderers(Renderer[] renderers)
             {
-                if (r == null) continue;
-                r.enabled = (r.transform.position - camPos).sqrMagnitude <= sqrDist;
+                renderersToCull = renderers;
             }
-        }
 
-        public void RestoreAllRenderers()
-        {
-            if (renderersToCull == null) return;
-            foreach (var r in renderersToCull)
+            public void Update()
             {
-                if (r != null) r.enabled = true;
+                if (!IsEnabled || renderersToCull == null) return;
+                if (Time.unscaledTime - lastCheckTime < 0.2f) return;
+                lastCheckTime = Time.unscaledTime;
+
+                Camera mainCam = Camera.main;
+                if (mainCam == null) return;
+
+                Vector3 camPos = mainCam.transform.position;
+                float sqrDist = CullDistance * CullDistance;
+
+                foreach (var r in renderersToCull)
+                {
+                    if (r == null) continue;
+                    r.enabled = (r.transform.position - camPos).sqrMagnitude <= sqrDist;
+                }
+            }
+
+            public void RestoreAllRenderers()
+            {
+                if (renderersToCull == null) return;
+                foreach (var r in renderersToCull)
+                {
+                    if (r != null) r.enabled = true;
+                }
             }
         }
     }

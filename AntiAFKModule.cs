@@ -6,7 +6,7 @@ namespace SpeedrunToolkitMod
 {
     public class AntiAfkModule
     {
-        public static bool EnableAntiAfk = true;
+        public static bool EnableAntiAfk = false;
         private float nextNudgeTime = 0f;
         private bool toggleDirection = false;
 

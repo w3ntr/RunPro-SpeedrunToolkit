@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "6.0.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "6.1.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -17,6 +17,8 @@ namespace SpeedrunToolkitMod
     public class Main : MelonMod
     {
         private WindowManager windowManager = new WindowManager();
+        private float[] tabHeights = new float[12];
+        private Vector2 tabScrollPos = Vector2.zero;
         private PracticeModule practiceModule;
         private SpeedometerModule speedoModule;
         private DeathZoneVisualizerModule deathZoneModule;
@@ -107,6 +109,7 @@ namespace SpeedrunToolkitMod
         public override void OnInitializeMelon()
         {
             prefCategory = MelonPreferences.CreateCategory("SpeedrunToolkit", "Speedrun Toolkit Settings");
+            windowManager.Init(prefCategory);
             prefMenuKey = prefCategory.CreateEntry("MenuKey", KeyCode.F8);
             prefSavePosKey = prefCategory.CreateEntry("SavePosKey", KeyCode.F9);
             prefLoadPosKey = prefCategory.CreateEntry("LoadPosKey", KeyCode.F10);
@@ -190,6 +193,25 @@ namespace SpeedrunToolkitMod
             SetGravityScale(1.0f);
         }
 
+        public static float windowWidth = 600f;
+        public static float windowHeight = 440f;
+        public static Rect windowRect = new Rect(100, 100, windowWidth, windowHeight);
+
+        public void LoadWindowConfig()
+        {
+            windowWidth = PlayerPrefs.GetFloat("Menu_Width", 600f);
+            windowHeight = PlayerPrefs.GetFloat("Menu_Height", 440f);
+            windowRect.width = windowWidth;
+            windowRect.height = windowHeight;
+        }
+
+        public void SaveWindowConfig()
+        {
+            PlayerPrefs.SetFloat("Menu_Width", windowWidth);
+            PlayerPrefs.SetFloat("Menu_Height", windowHeight);
+            PlayerPrefs.Save();
+        }
+
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             if (practiceModule != null) practiceModule.OnSceneWasLoaded(sceneName);
@@ -199,6 +221,7 @@ namespace SpeedrunToolkitMod
             if (deathZoneModule != null) deathZoneModule.OnSceneWasLoaded(sceneName);
             if (Slomo != null) Slomo.ResetSpeed();
             if (fixesModule != null) fixesModule.OnSceneWasLoaded(sceneName);
+            graphicsModule?.OnSceneLoaded();
             ResetGravity();
 
             if (movementModule != null)
@@ -212,22 +235,18 @@ namespace SpeedrunToolkitMod
         {
             try
             {
-                // 1. Проверка IMGUI фокуса (если ввод идет в текстовое поле UI мода)
                 if (!string.IsNullOrEmpty(GUI.GetNameOfFocusedControl()))
                     return true;
 
-                // 2. Проверка EventSystem игры (чат, консоль)
                 var eventSystem = UnityEngine.EventSystems.EventSystem.current;
                 if (eventSystem != null && eventSystem.currentSelectedGameObject != null)
                 {
                     var selected = eventSystem.currentSelectedGameObject;
 
-                    // Проверяем, выделено ли поле ввода и активен ли в нем курсор (isFocused)
                     var inputField = selected.GetComponent<UnityEngine.UI.InputField>();
                     if (inputField != null && inputField.isFocused)
                         return true;
 
-                    // Для TextMeshPro полей ввода
                     var components = selected.GetComponents<Component>();
                     foreach (var comp in components)
                     {
@@ -270,16 +289,13 @@ namespace SpeedrunToolkitMod
             antiAfkModule.OnUpdate();
             speedoModule?.Update();
 
-            // Если игрок в этот момент печатает текст в любом поле — блокируем горячие клавиши
             if (IsUserTyping()) return;
 
-            // Переключение меню
             if (Input.GetKeyDown(menuKey))
             {
                 ToggleMenuState(!showMenu);
             }
 
-            // Обработка Rebind
             if (activeRebindIndex != -1)
             {
                 foreach (KeyCode kcode in System.Enum.GetValues(typeof(KeyCode)))
@@ -303,16 +319,13 @@ namespace SpeedrunToolkitMod
                 return;
             }
 
-            // Блокировка вызовов мода при открытом меню
             if (showMenu) return;
 
-            // Включаем обратно EventSystem игры, если меню закрыли
             if (EventSystem.current != null && !EventSystem.current.enabled)
             {
                 EventSystem.current.enabled = true;
             }
 
-            // Игровая логика
             if (freecamModule != null) freecamModule.OnUpdate();
             if (musicModule != null) musicModule.OnUpdate();
             graphicsModule?.OnUpdate();
@@ -393,7 +406,6 @@ namespace SpeedrunToolkitMod
             {
                 DrawSettingsMenu();
 
-                // Поглощаем клик, если курсор находится над окном мода
                 if (windowManager != null && windowManager.WindowRect.Contains(Event.current.mousePosition))
                 {
                     if (Event.current.type == EventType.MouseDown || Event.current.type == EventType.MouseUp)
@@ -453,9 +465,28 @@ namespace SpeedrunToolkitMod
             }
         }
 
+        private void DrawModuleWithScroll(int tabId, float x, float y, float contentHeight, System.Action<float, float, float> drawAction)
+        {
+            float viewWidth = windowManager.WindowRect.width - 24f;
+            float viewHeight = windowManager.WindowRect.height - y - 12f;
+
+            if (viewHeight < 50f) viewHeight = 50f;
+
+            bool needsScroll = contentHeight > viewHeight;
+
+            Rect viewRect = new Rect(x, y, viewWidth, viewHeight);
+            Rect contentRect = new Rect(0, 0, viewWidth - (needsScroll ? 20f : 5f), contentHeight);
+
+            tabScrollPos = GUI.BeginScrollView(viewRect, tabScrollPos, contentRect);
+
+            drawAction(0f, 0f, contentRect.width);
+
+            GUI.EndScrollView();
+        }
+
         private void DrawSettingsMenu()
         {
-            windowManager.Draw("Speedrun Toolkit v6.0.0", (id) =>
+            windowManager.Draw("Speedrun Toolkit v6.1.0", (id) =>
             {
                 float x = 12f;
                 float y = 30f;
@@ -477,7 +508,11 @@ namespace SpeedrunToolkitMod
                     GUIStyle style = (selectedTab == i) ? UITheme.TabActiveStyle : UITheme.TabStyle;
                     if (GUI.Button(new Rect(rx, ry, tabWidth, tabHeight), tabNames[i], style))
                     {
-                        selectedTab = i;
+                        if (selectedTab != i)
+                        {
+                            selectedTab = i;
+                            tabScrollPos = Vector2.zero; // Сброс скролла при смене вкладки
+                        }
                     }
                 }
 
@@ -522,126 +557,202 @@ namespace SpeedrunToolkitMod
                 }
                 else if (selectedTab == 1 && speedoModule != null)
                 {
-                    speedoModule.IsEnabled = GUI.Toggle(new Rect(x, y, contentWidth, 18), speedoModule.IsEnabled, " Enable HUD Overlay");
-                    y += 20;
+                    float calculatedHeight = SpeedometerModule.EnableCustomText ? 460f : 240f;
 
-                    float checkW = contentWidth / 2f;
-                    speedoModule.ShowSpeed = GUI.Toggle(new Rect(x, y, checkW, 18), speedoModule.ShowSpeed, " Speedometer");
-                    speedoModule.ShowCoords = GUI.Toggle(new Rect(x + checkW, y, checkW, 18), speedoModule.ShowCoords, " Coordinates");
-                    y += 20;
-
-                    speedoModule.ShowAngles = GUI.Toggle(new Rect(x, y, checkW, 18), speedoModule.ShowAngles, " Look Angles");
-                    speedoModule.ShowXP = GUI.Toggle(new Rect(x + checkW, y, checkW, 18), speedoModule.ShowXP, " Player XP & Level");
-                    y += 20;
-
-                    bool newHideNative = GUI.Toggle(new Rect(x, y, contentWidth, 18), speedoModule.HideNativeSpeedo, " Hide Native Game Speedometer");
-                    if (newHideNative != speedoModule.HideNativeSpeedo)
+                    DrawModuleWithScroll(1, x, y, calculatedHeight, (ix, iy, iw) =>
                     {
-                        speedoModule.HideNativeSpeedo = newHideNative;
-                        speedoModule.ToggleNativeSpeedometer(newHideNative);
-                    }
-                    y += 22;
-                    // --- Выбор стиля шрифта ---
-                    GUI.Label(new Rect(x, y, 90, 18), "Font Style:", UITheme.LabelStyle);
-                    string[] fontNames = new string[] { "Bold", "Normal", "Italic", "Bold-Italic" };
-                    FontStyle[] fontStyles = new FontStyle[] { FontStyle.Bold, FontStyle.Normal, FontStyle.Italic, FontStyle.BoldAndItalic };
+                        speedoModule.IsEnabled = GUI.Toggle(new Rect(ix, iy, iw, 18), speedoModule.IsEnabled, " Enable HUD Overlay");
+                        iy += 22;
 
-                    float fBtnW = (contentWidth - 95f) / 4f;
-                    for (int i = 0; i < fontNames.Length; i++)
-                    {
-                        if (GUI.Button(new Rect(x + 95f + (i * fBtnW), y, fBtnW - 2f, 18), fontNames[i]))
+                        float checkW = iw / 2f;
+                        speedoModule.ShowSpeed = GUI.Toggle(new Rect(ix, iy, checkW, 18), speedoModule.ShowSpeed, " Speedometer");
+                        speedoModule.ShowCoords = GUI.Toggle(new Rect(ix + checkW, iy, checkW, 18), speedoModule.ShowCoords, " Coordinates");
+                        iy += 22;
+
+                        speedoModule.ShowAngles = GUI.Toggle(new Rect(ix, iy, checkW, 18), speedoModule.ShowAngles, " Look Angles");
+                        speedoModule.ShowXP = GUI.Toggle(new Rect(ix + checkW, iy, checkW, 18), speedoModule.ShowXP, " Player XP & Level");
+                        iy += 22;
+
+                        bool newHideNative = GUI.Toggle(new Rect(ix, iy, iw, 18), speedoModule.HideNativeSpeedo, " Hide Native Game Speedometer");
+                        if (newHideNative != speedoModule.HideNativeSpeedo)
                         {
-                            speedoModule.FontStyle = fontStyles[i];
+                            speedoModule.HideNativeSpeedo = newHideNative;
+                            speedoModule.ToggleNativeSpeedometer(newHideNative);
+                        }
+                        iy += 24;
+
+                        GUI.Label(new Rect(ix, iy, 90, 18), "Font Style:", UITheme.LabelStyle);
+                        string[] fontNames = new string[] { "Bold", "Normal", "Italic", "Bold-Italic" };
+                        FontStyle[] fontStyles = new FontStyle[] { FontStyle.Bold, FontStyle.Normal, FontStyle.Italic, FontStyle.BoldAndItalic };
+
+                        float fBtnW = (iw - 95f) / 4f;
+                        for (int i = 0; i < fontNames.Length; i++)
+                        {
+                            if (GUI.Button(new Rect(ix + 95f + (i * fBtnW), iy, fBtnW - 2f, 18), fontNames[i]))
+                            {
+                                speedoModule.FontStyle = fontStyles[i];
+                                speedoModule.SaveConfig();
+                            }
+                        }
+                        iy += 24;
+
+                        GUI.Label(new Rect(ix, iy, 75, 18), "Value Color:", UITheme.LabelStyle);
+                        string newValHex = GUI.TextField(new Rect(ix + 80, iy, 75, 18), speedoModule.ValueHex);
+                        if (newValHex != speedoModule.ValueHex)
+                        {
+                            speedoModule.ValueHex = newValHex;
+                            speedoModule.SyncValueHSVFromHex();
                             speedoModule.SaveConfig();
                         }
-                    }
-                    y += 24;
 
-                    // --- Цвет значений (Value Color + 4 Слайдера) ---
-                    GUI.Label(new Rect(x, y, 75, 18), "Value Color:", UITheme.LabelStyle);
-                    string newValHex = GUI.TextField(new Rect(x + 80, y, 75, 18), speedoModule.ValueHex);
-                    if (newValHex != speedoModule.ValueHex)
-                    {
-                        speedoModule.ValueHex = newValHex;
-                        speedoModule.SyncValueHSVFromHex();
-                        speedoModule.SaveConfig();
-                    }
+                        float vSliderW = (iw - 160f) / 4f;
+                        float vH = Mathf.Clamp(GUI.HorizontalSlider(new Rect(ix + 160, iy + 3, vSliderW - 2, 13), speedoModule.ValueH, 0f, 1f), 0f, 0.999f);
+                        float vS = GUI.HorizontalSlider(new Rect(ix + 160 + vSliderW, iy + 3, vSliderW - 2, 13), speedoModule.ValueS, 0f, 1f);
+                        float vV = GUI.HorizontalSlider(new Rect(ix + 160 + vSliderW * 2, iy + 3, vSliderW - 2, 13), speedoModule.ValueV, 0f, 1f);
+                        float vA = GUI.HorizontalSlider(new Rect(ix + 160 + vSliderW * 3, iy + 3, vSliderW - 2, 13), speedoModule.ValueA, 0f, 1f);
 
-                    float vSliderW = (contentWidth - 160f) / 4f;
-                    float vH = Mathf.Clamp(GUI.HorizontalSlider(new Rect(x + 160, y + 2, vSliderW - 2, 15), speedoModule.ValueH, 0f, 1f), 0f, 0.999f);
-                    float vS = GUI.HorizontalSlider(new Rect(x + 160 + vSliderW, y + 2, vSliderW - 2, 15), speedoModule.ValueS, 0f, 1f);
-                    float vV = GUI.HorizontalSlider(new Rect(x + 160 + vSliderW * 2, y + 2, vSliderW - 2, 15), speedoModule.ValueV, 0f, 1f);
-                    float vA = GUI.HorizontalSlider(new Rect(x + 160 + vSliderW * 3, y + 2, vSliderW - 2, 15), speedoModule.ValueA, 0f, 1f);
+                        if (vH != speedoModule.ValueH || vS != speedoModule.ValueS || vV != speedoModule.ValueV || vA != speedoModule.ValueA)
+                        {
+                            speedoModule.ValueH = vH;
+                            speedoModule.ValueS = vS;
+                            speedoModule.ValueV = vV;
+                            speedoModule.ValueA = vA;
+                            Color col = Color.HSVToRGB(vH, vS, vV);
+                            col.a = vA;
+                            speedoModule.ValueHex = SpeedometerModule.ColorToHexRGBA(col);
+                            speedoModule.SaveConfig();
+                        }
+                        iy += 24;
 
-                    if (vH != speedoModule.ValueH || vS != speedoModule.ValueS || vV != speedoModule.ValueV || vA != speedoModule.ValueA)
-                    {
-                        speedoModule.ValueH = vH;
-                        speedoModule.ValueS = vS;
-                        speedoModule.ValueV = vV;
-                        speedoModule.ValueA = vA;
-                        Color col = Color.HSVToRGB(vH, vS, vV);
-                        col.a = vA;
-                        speedoModule.ValueHex = SpeedometerModule.ColorToHex(col, true);
-                        speedoModule.SaveConfig();
-                    }
-                    y += 22;
+                        GUI.Label(new Rect(ix, iy, 75, 18), "Label Color:", UITheme.LabelStyle);
+                        string newLblHex = GUI.TextField(new Rect(ix + 80, iy, 75, 18), speedoModule.LabelHex);
+                        if (newLblHex != speedoModule.LabelHex)
+                        {
+                            speedoModule.LabelHex = newLblHex;
+                            speedoModule.SyncLabelHSVFromHex();
+                            speedoModule.SaveConfig();
+                        }
 
-                    // --- Цвет подписей (Label Color + 4 Слайдера) ---
-                    GUI.Label(new Rect(x, y, 75, 18), "Label Color:", UITheme.LabelStyle);
-                    string newLblHex = GUI.TextField(new Rect(x + 80, y, 75, 18), speedoModule.LabelHex);
-                    if (newLblHex != speedoModule.LabelHex)
-                    {
-                        speedoModule.LabelHex = newLblHex;
-                        speedoModule.SyncLabelHSVFromHex();
-                        speedoModule.SaveConfig();
-                    }
+                        float lSliderW = (iw - 160f) / 4f;
+                        float lH = Mathf.Clamp(GUI.HorizontalSlider(new Rect(ix + 160, iy + 3, lSliderW - 2, 13), speedoModule.LabelH, 0f, 1f), 0f, 0.999f);
+                        float lS = GUI.HorizontalSlider(new Rect(ix + 160 + lSliderW, iy + 3, lSliderW - 2, 13), speedoModule.LabelS, 0f, 1f);
+                        float lV = GUI.HorizontalSlider(new Rect(ix + 160 + lSliderW * 2, iy + 3, lSliderW - 2, 13), speedoModule.LabelV, 0f, 1f);
+                        float lA = GUI.HorizontalSlider(new Rect(ix + 160 + lSliderW * 3, iy + 3, lSliderW - 2, 13), speedoModule.LabelA, 0f, 1f);
 
-                    float lSliderW = (contentWidth - 160f) / 4f;
-                    float lH = Mathf.Clamp(GUI.HorizontalSlider(new Rect(x + 160, y + 2, lSliderW - 2, 15), speedoModule.LabelH, 0f, 1f), 0f, 0.999f);
-                    float lS = GUI.HorizontalSlider(new Rect(x + 160 + lSliderW, y + 2, lSliderW - 2, 15), speedoModule.LabelS, 0f, 1f);
-                    float lV = GUI.HorizontalSlider(new Rect(x + 160 + lSliderW * 2, y + 2, lSliderW - 2, 15), speedoModule.LabelV, 0f, 1f);
-                    float lA = GUI.HorizontalSlider(new Rect(x + 160 + lSliderW * 3, y + 2, lSliderW - 2, 15), speedoModule.LabelA, 0f, 1f);
+                        if (lH != speedoModule.LabelH || lS != speedoModule.LabelS || lV != speedoModule.LabelV || lA != speedoModule.LabelA)
+                        {
+                            speedoModule.LabelH = lH;
+                            speedoModule.LabelS = lS;
+                            speedoModule.LabelV = lV;
+                            speedoModule.LabelA = lA;
+                            Color col = Color.HSVToRGB(lH, lS, lV);
+                            col.a = lA;
+                            speedoModule.LabelHex = SpeedometerModule.ColorToHexRGBA(col);
+                            speedoModule.SaveConfig();
+                        }
+                        iy += 26;
 
-                    if (lH != speedoModule.LabelH || lS != speedoModule.LabelS || lV != speedoModule.LabelV || lA != speedoModule.LabelA)
-                    {
-                        speedoModule.LabelH = lH;
-                        speedoModule.LabelS = lS;
-                        speedoModule.LabelV = lV;
-                        speedoModule.LabelA = lA;
-                        Color col = Color.HSVToRGB(lH, lS, lV);
-                        col.a = lA;
-                        speedoModule.LabelHex = SpeedometerModule.ColorToHex(col, true);
-                        speedoModule.SaveConfig();
-                    }
-                    y += 26;
+                        GUI.Label(new Rect(ix, iy, iw, 18), "<b>Custom Text Settings:</b>", UITheme.LabelStyle);
+                        iy += 22;
 
-                    // --- Слайдеры смещения по оси X ---
-                    GUI.Label(new Rect(x, y, contentWidth, 18), $"Label Offset X: {(int)speedoModule.LabelOffsetX}px", UITheme.LabelStyle);
-                    y += 18;
-                    float newLabelOff = GUI.HorizontalSlider(new Rect(x, y, contentWidth, 15), speedoModule.LabelOffsetX, 0f, 250f);
-                    if (newLabelOff != speedoModule.LabelOffsetX)
-                    {
-                        speedoModule.LabelOffsetX = newLabelOff;
-                        speedoModule.SaveConfig();
-                    }
-                    y += 22;
+                        bool newEnableText = GUI.Toggle(new Rect(ix, iy, iw, 18), SpeedometerModule.EnableCustomText, " Enable Custom Text");
+                        if (newEnableText != SpeedometerModule.EnableCustomText)
+                        {
+                            SpeedometerModule.EnableCustomText = newEnableText;
+                            speedoModule.SaveConfig();
+                        }
+                        iy += 22;
 
-                    GUI.Label(new Rect(x, y, contentWidth, 18), $"Value Offset X: {(int)speedoModule.ValueOffsetX}px", UITheme.LabelStyle);
-                    y += 18;
-                    float newValOff = GUI.HorizontalSlider(new Rect(x, y, contentWidth, 15), speedoModule.ValueOffsetX, 0f, 250f);
-                    if (newValOff != speedoModule.ValueOffsetX)
-                    {
-                        speedoModule.ValueOffsetX = newValOff;
-                        speedoModule.SaveConfig();
-                    }
-                    y += 28;
+                        if (SpeedometerModule.EnableCustomText)
+                        {
+                            GUI.Label(new Rect(ix, iy, 45, 18), "Text:", UITheme.LabelStyle);
+                            string newText = GUI.TextField(new Rect(ix + 50, iy, iw - 50, 18), SpeedometerModule.CustomTextContent ?? "", UITheme.TextFieldStyle);
+                            if (newText != SpeedometerModule.CustomTextContent)
+                            {
+                                SpeedometerModule.CustomTextContent = newText;
+                                speedoModule.SaveConfig();
+                            }
+                            iy += 24;
 
-                    if (crosshairModule != null)
-                    {
-                        y = crosshairModule.DrawUI(x, y, contentWidth);
-                    }
-                    prefTungEnabled.Value = GUI.Toggle(new Rect(x, y, contentWidth, 20), prefTungEnabled.Value, " Enable Tung Tung Sahur Model");
-                    y += 22;
+                            GUI.Label(new Rect(ix, iy, 75, 18), "Font Style:", UITheme.LabelStyle);
+                            string[] customFontNames = new string[] { "Bold", "Normal", "Italic", "Bold-Italic" };
+                            FontStyle[] customFontStyles = new FontStyle[] { FontStyle.Bold, FontStyle.Normal, FontStyle.Italic, FontStyle.BoldAndItalic };
+
+                            float cfBtnW = (iw - 80f) / 4f;
+                            for (int i = 0; i < customFontNames.Length; i++)
+                            {
+                                GUIStyle btnStyle = (SpeedometerModule.CustomTextFontStyle == customFontStyles[i]) ? UITheme.TabActiveStyle : UITheme.ButtonStyle;
+                                if (GUI.Button(new Rect(ix + 80f + (i * cfBtnW), iy, cfBtnW - 2f, 18), customFontNames[i], btnStyle))
+                                {
+                                    SpeedometerModule.CustomTextFontStyle = customFontStyles[i];
+                                    speedoModule.SaveConfig();
+                                }
+                            }
+                            iy += 24;
+
+                            GUI.Label(new Rect(ix, iy, 75, 18), "Text Color:", UITheme.LabelStyle);
+                            string newCustomHex = GUI.TextField(new Rect(ix + 80, iy, 75, 18), SpeedometerModule.CustomTextHex, UITheme.TextFieldStyle);
+                            if (newCustomHex != SpeedometerModule.CustomTextHex)
+                            {
+                                SpeedometerModule.CustomTextHex = newCustomHex;
+                                SpeedometerModule.SyncCustomTextHSVFromHex();
+                                speedoModule.SaveConfig();
+                            }
+
+                            float cSliderW = (iw - 160f) / 4f;
+                            float cH = Mathf.Clamp(GUI.HorizontalSlider(new Rect(ix + 160, iy + 3, cSliderW - 2, 13), SpeedometerModule.CustomTextH, 0f, 1f), 0f, 0.999f);
+                            float cS = GUI.HorizontalSlider(new Rect(ix + 160 + cSliderW, iy + 3, cSliderW - 2, 13), SpeedometerModule.CustomTextS, 0f, 1f);
+                            float cV = GUI.HorizontalSlider(new Rect(ix + 160 + cSliderW * 2, iy + 3, cSliderW - 2, 13), SpeedometerModule.CustomTextV, 0f, 1f);
+                            float cA = GUI.HorizontalSlider(new Rect(ix + 160 + cSliderW * 3, iy + 3, cSliderW - 2, 13), SpeedometerModule.CustomTextA, 0f, 1f);
+
+                            if (cH != SpeedometerModule.CustomTextH || cS != SpeedometerModule.CustomTextS || cV != SpeedometerModule.CustomTextV || cA != SpeedometerModule.CustomTextA)
+                            {
+                                SpeedometerModule.CustomTextH = cH;
+                                SpeedometerModule.CustomTextS = cS;
+                                SpeedometerModule.CustomTextV = cV;
+                                SpeedometerModule.CustomTextA = cA;
+                                Color col = Color.HSVToRGB(cH, cS, cV);
+                                col.a = cA;
+                                SpeedometerModule.CustomTextHex = SpeedometerModule.ColorToHexRGBA(col);
+                                SpeedometerModule.CustomTextColor = col;
+                                speedoModule.SaveConfig();
+                            }
+                            iy += 26;
+
+                            GUI.Label(new Rect(ix, iy, iw, 18), $"Pos X: {SpeedometerModule.CustomTextPosX:F0}px", UITheme.LabelStyle);
+                            iy += 18;
+                            float newX = GUI.HorizontalSlider(new Rect(ix, iy, iw, 13), SpeedometerModule.CustomTextPosX, 0f, 1920f);
+                            if (Mathf.Abs(newX - SpeedometerModule.CustomTextPosX) > 0.1f)
+                            {
+                                SpeedometerModule.CustomTextPosX = newX;
+                                speedoModule.SaveConfig();
+                            }
+                            iy += 22;
+
+                            GUI.Label(new Rect(ix, iy, iw, 18), $"Pos Y: {SpeedometerModule.CustomTextPosY:F0}px", UITheme.LabelStyle);
+                            iy += 18;
+                            float newY = GUI.HorizontalSlider(new Rect(ix, iy, iw, 13), SpeedometerModule.CustomTextPosY, 0f, 1080f);
+                            if (Mathf.Abs(newY - SpeedometerModule.CustomTextPosY) > 0.1f)
+                            {
+                                SpeedometerModule.CustomTextPosY = newY;
+                                speedoModule.SaveConfig();
+                            }
+                            iy += 22;
+
+                            GUI.Label(new Rect(ix, iy, iw, 18), $"Text Size: {SpeedometerModule.CustomTextSize:F0}px", UITheme.LabelStyle);
+                            iy += 18;
+                            float newSize = GUI.HorizontalSlider(new Rect(ix, iy, iw, 13), SpeedometerModule.CustomTextSize, 10f, 100f);
+                            if (Mathf.Abs(newSize - SpeedometerModule.CustomTextSize) > 0.1f)
+                            {
+                                SpeedometerModule.CustomTextSize = newSize;
+                                speedoModule.SaveConfig();
+                            }
+                            iy += 26;
+                        }
+
+                        prefTungEnabled.Value = GUI.Toggle(new Rect(ix, iy, iw, 18), prefTungEnabled.Value, " Enable Tung Tung Sahur Model");
+                        iy += 22;
+                    });
                 }
                 else if (selectedTab == 2 && deathZoneModule != null)
                 {
@@ -709,19 +820,26 @@ namespace SpeedrunToolkitMod
                 }
                 else if (selectedTab == 5 && graphicsModule != null)
                 {
-                    graphicsModule.DrawUI(x, y, contentWidth);
+                    // Базовая высота всех стандартных кнопок и переключателей
+                    float graphicsContentHeight = 530f;
+
+                    // Добавляем высоту только если включены соответствующие ползунки
+                    if (graphicsModule.EnableCustomRenderDistance) graphicsContentHeight += 56f;
+                    if (graphicsModule.EnableCustomShadowDistance) graphicsContentHeight += 56f;
+
+                    DrawModuleWithScroll(5, x, y, graphicsContentHeight, (ix, iy, iw) => graphicsModule.DrawUI(ix, iy, iw));
                 }
                 else if (selectedTab == 6 && musicModule != null)
                 {
-                    musicModule.DrawUI(x, y, contentWidth);
+                    DrawModuleWithScroll(6, x, y, 450f, (ix, iy, iw) => musicModule.DrawUI(ix, iy, iw));
                 }
                 else if (selectedTab == 7 && movementModule != null)
                 {
-                    y = movementModule.DrawUI(x, y, contentWidth);
+                    DrawModuleWithScroll(7, x, y, 350f, (ix, iy, iw) => movementModule.DrawUI(ix, iy, iw));
                 }
                 else if (selectedTab == 8 && fixesModule != null)
                 {
-                    fixesModule.DrawUI(x, y, contentWidth);
+                    DrawModuleWithScroll(8, x, y, 400f, (ix, iy, iw) => fixesModule.DrawUI(ix, iy, iw));
                 }
                 else if (selectedTab == 9 && Slomo != null)
                 {
@@ -751,180 +869,183 @@ namespace SpeedrunToolkitMod
                 }
                 else if (selectedTab == 10) // Settings
                 {
-                    GUI.Label(new Rect(x, y, contentWidth, 20), "<b>🎨 UI Theme Presets</b>", UITheme.LabelStyle);
-                    y += 22;
-
-                    float presetBtnW = (contentWidth - (UITheme.Presets.Length - 1) * 4f) / UITheme.Presets.Length;
-                    for (int p = 0; p < UITheme.Presets.Length; p++)
+                    DrawModuleWithScroll(10, x, y, 420f, (ix, iy, iw) =>
                     {
-                        GUIStyle style = (UITheme.ActivePresetIndex == p) ? UITheme.TabActiveStyle : UITheme.ButtonStyle;
-                        if (GUI.Button(new Rect(x + p * (presetBtnW + 4f), y, presetBtnW, 22f), UITheme.Presets[p].Name, style))
+                        GUI.Label(new Rect(ix, iy, iw, 20), "<b>🎨 UI Theme Presets</b>", UITheme.LabelStyle);
+                        iy += 22;
+
+                        float presetBtnW = (iw - (UITheme.Presets.Length - 1) * 4f) / UITheme.Presets.Length;
+                        for (int p = 0; p < UITheme.Presets.Length; p++)
                         {
-                            UITheme.SetPreset(p);
+                            GUIStyle style = (UITheme.ActivePresetIndex == p) ? UITheme.TabActiveStyle : UITheme.ButtonStyle;
+                            if (GUI.Button(new Rect(ix + p * (presetBtnW + 4f), iy, presetBtnW, 22f), UITheme.Presets[p].Name, style))
+                            {
+                                UITheme.SetPreset(p);
+                            }
                         }
-                    }
-                    y += 28;
+                        iy += 28;
 
-                    float colWidth = (contentWidth - 16f) / 2f;
+                        float colWidth = (iw - 16f) / 2f;
+                        float lx = ix;
+                        float ly = iy;
 
-                    // === ЛЕВАЯ КОЛОНКА: Accent Color ===
-                    float lx = x;
-                    float ly = y;
+                        GUI.Label(new Rect(lx, ly, colWidth, 18), "<b>✨ Accent Color (Buttons)</b>", UITheme.LabelStyle);
+                        ly += 20;
 
-                    GUI.Label(new Rect(lx, ly, colWidth, 18), "<b>✨ Accent Color (Buttons)</b>", UITheme.LabelStyle);
-                    ly += 20;
+                        Color currentAccent = UITheme.HexToColor(UITheme.CustomAccentHex);
+                        UITheme.DrawColorPreview(new Rect(lx, ly, 18f, 18f), currentAccent);
 
-                    Color currentAccent = UITheme.HexToColor(UITheme.CustomAccentHex);
-                    UITheme.DrawColorPreview(new Rect(lx, ly, 18f, 18f), currentAccent);
+                        GUI.Label(new Rect(lx + 24f, ly, 45f, 18f), "HEX:", UITheme.LabelStyle);
+                        string newAccentHex = GUI.TextField(new Rect(lx + 65f, ly, 75f, 18f), UITheme.CustomAccentHex, UITheme.TextFieldStyle);
+                        if (newAccentHex != UITheme.CustomAccentHex)
+                        {
+                            UITheme.CustomAccentHex = newAccentHex;
+                            UITheme.SetAccentColor(UITheme.HexToColor(newAccentHex));
+                        }
+                        ly += 22;
 
-                    GUI.Label(new Rect(lx + 24f, ly, 45f, 18f), "HEX:", UITheme.LabelStyle);
-                    string newAccentHex = GUI.TextField(new Rect(lx + 65f, ly, 75f, 18f), UITheme.CustomAccentHex, UITheme.TextFieldStyle);
-                    if (newAccentHex != UITheme.CustomAccentHex)
-                    {
-                        UITheme.CustomAccentHex = newAccentHex;
-                        UITheme.SetAccentColor(UITheme.HexToColor(newAccentHex));
-                    }
-                    ly += 22;
+                        string[] accentSwatches = new string[] { "#CBA6F7", "#00E5FF", "#FF4757", "#2ED573", "#FFA502", "#FF78FA" };
+                        float swW = (colWidth - (accentSwatches.Length - 1) * 3f) / accentSwatches.Length;
+                        for (int c = 0; c < accentSwatches.Length; c++)
+                        {
+                            Color swColor = UITheme.HexToColor(accentSwatches[c]);
+                            Rect swRect = new Rect(lx + c * (swW + 3f), ly, swW, 16f);
+                            UITheme.DrawColorPreview(swRect, swColor);
+                            if (GUI.Button(swRect, "", GUIStyle.none)) UITheme.SetAccentColor(swColor);
+                        }
+                        ly += 22;
 
-                    string[] accentSwatches = new string[] { "#CBA6F7", "#00E5FF", "#FF4757", "#2ED573", "#FFA502", "#FF78FA" };
-                    float swW = (colWidth - (accentSwatches.Length - 1) * 3f) / accentSwatches.Length;
-                    for (int c = 0; c < accentSwatches.Length; c++)
-                    {
-                        Color swColor = UITheme.HexToColor(accentSwatches[c]);
-                        Rect swRect = new Rect(lx + c * (swW + 3f), ly, swW, 16f);
-                        UITheme.DrawColorPreview(swRect, swColor);
-                        if (GUI.Button(swRect, "", GUIStyle.none)) UITheme.SetAccentColor(swColor);
-                    }
-                    ly += 22;
+                        GUI.Label(new Rect(lx, ly, colWidth, 18f), $"Hue: {(int)(UITheme.AccentH * 360f)}°", UITheme.LabelStyle);
+                        ly += 18f;
+                        float newAH = GUI.HorizontalSlider(new Rect(lx, ly, colWidth, 14f), UITheme.AccentH, 0f, 1f);
+                        ly += 20f;
 
-                    GUI.Label(new Rect(lx, ly, colWidth, 18f), $"Hue: {(int)(UITheme.AccentH * 360f)}°", UITheme.LabelStyle);
-                    ly += 18f;
-                    float newAH = GUI.HorizontalSlider(new Rect(lx, ly, colWidth, 14f), UITheme.AccentH, 0f, 1f);
-                    ly += 20f;
+                        GUI.Label(new Rect(lx, ly, colWidth, 18f), $"Saturation: {(int)(UITheme.AccentS * 100f)}%", UITheme.LabelStyle);
+                        ly += 18f;
+                        float newAS = GUI.HorizontalSlider(new Rect(lx, ly, colWidth, 14f), UITheme.AccentS, 0f, 1f);
+                        ly += 20f;
 
-                    GUI.Label(new Rect(lx, ly, colWidth, 18f), $"Saturation: {(int)(UITheme.AccentS * 100f)}%", UITheme.LabelStyle);
-                    ly += 18f;
-                    float newAS = GUI.HorizontalSlider(new Rect(lx, ly, colWidth, 14f), UITheme.AccentS, 0f, 1f);
-                    ly += 20f;
+                        GUI.Label(new Rect(lx, ly, colWidth, 18f), $"Brightness: {(int)(UITheme.AccentV * 100f)}%", UITheme.LabelStyle);
+                        ly += 18f;
+                        float newAV = GUI.HorizontalSlider(new Rect(lx, ly, colWidth, 14f), UITheme.AccentV, 0f, 1f);
+                        ly += 22f;
 
-                    GUI.Label(new Rect(lx, ly, colWidth, 18f), $"Brightness: {(int)(UITheme.AccentV * 100f)}%", UITheme.LabelStyle);
-                    ly += 18f;
-                    float newAV = GUI.HorizontalSlider(new Rect(lx, ly, colWidth, 14f), UITheme.AccentV, 0f, 1f);
-                    ly += 22f;
+                        if (Mathf.Abs(newAH - UITheme.AccentH) > 0.001f || Mathf.Abs(newAS - UITheme.AccentS) > 0.001f || Mathf.Abs(newAV - UITheme.AccentV) > 0.001f)
+                        {
+                            UITheme.AccentH = newAH; UITheme.AccentS = newAS; UITheme.AccentV = newAV;
+                            UITheme.CustomAccentHex = UITheme.ColorToHex(UITheme.HSVToRGB(newAH, newAS, newAV));
+                            UITheme.ForceRebuild();
+                        }
 
-                    if (Mathf.Abs(newAH - UITheme.AccentH) > 0.001f || Mathf.Abs(newAS - UITheme.AccentS) > 0.001f || Mathf.Abs(newAV - UITheme.AccentV) > 0.001f)
-                    {
-                        UITheme.AccentH = newAH; UITheme.AccentS = newAS; UITheme.AccentV = newAV;
-                        UITheme.CustomAccentHex = UITheme.ColorToHex(UITheme.HSVToRGB(newAH, newAS, newAV));
-                        UITheme.ForceRebuild();
-                    }
+                        float rx = ix + colWidth + 16f;
+                        float ry = iy;
 
-                    // === ПРАВАЯ КОЛОНКА: Background Color ===
-                    float rx = x + colWidth + 16f;
-                    float ry = y;
+                        GUI.Label(new Rect(rx, ry, colWidth, 18), "<b>🌌 Background Color</b>", UITheme.LabelStyle);
+                        ry += 20;
 
-                    GUI.Label(new Rect(rx, ry, colWidth, 18), "<b>🌌 Background Color</b>", UITheme.LabelStyle);
-                    ry += 20;
+                        Color currentBg = UITheme.HexToColor(UITheme.CustomBgHex);
+                        UITheme.DrawColorPreview(new Rect(rx, ry, 18f, 18f), currentBg);
 
-                    Color currentBg = UITheme.HexToColor(UITheme.CustomBgHex);
-                    UITheme.DrawColorPreview(new Rect(rx, ry, 18f, 18f), currentBg);
+                        GUI.Label(new Rect(rx + 24f, ry, 45f, 18f), "HEX:", UITheme.LabelStyle);
+                        string newBgHex = GUI.TextField(new Rect(rx + 65f, ry, 75f, 18f), UITheme.CustomBgHex, UITheme.TextFieldStyle);
+                        if (newBgHex != UITheme.CustomBgHex)
+                        {
+                            UITheme.CustomBgHex = newBgHex;
+                            UITheme.SetBgColor(UITheme.HexToColor(newBgHex));
+                        }
+                        ry += 22;
 
-                    GUI.Label(new Rect(rx + 24f, ry, 45f, 18f), "HEX:", UITheme.LabelStyle);
-                    string newBgHex = GUI.TextField(new Rect(rx + 65f, ry, 75f, 18f), UITheme.CustomBgHex, UITheme.TextFieldStyle);
-                    if (newBgHex != UITheme.CustomBgHex)
-                    {
-                        UITheme.CustomBgHex = newBgHex;
-                        UITheme.SetBgColor(UITheme.HexToColor(newBgHex));
-                    }
-                    ry += 22;
+                        string[] bgSwatches = new string[] { "#1E1E2E", "#0D0F18", "#1A1B26", "#050508", "#181818", "#0F172A" };
+                        float bgSwW = (colWidth - (bgSwatches.Length - 1) * 3f) / bgSwatches.Length;
+                        for (int c = 0; c < bgSwatches.Length; c++)
+                        {
+                            Color swColor = UITheme.HexToColor(bgSwatches[c]);
+                            Rect swRect = new Rect(rx + c * (bgSwW + 3f), ry, bgSwW, 16f);
+                            UITheme.DrawColorPreview(swRect, swColor);
+                            if (GUI.Button(swRect, "", GUIStyle.none)) UITheme.SetBgColor(swColor);
+                        }
+                        ry += 22;
 
-                    string[] bgSwatches = new string[] { "#1E1E2E", "#0D0F18", "#1A1B26", "#050508", "#181818", "#0F172A" };
-                    float bgSwW = (colWidth - (bgSwatches.Length - 1) * 3f) / bgSwatches.Length;
-                    for (int c = 0; c < bgSwatches.Length; c++)
-                    {
-                        Color swColor = UITheme.HexToColor(bgSwatches[c]);
-                        Rect swRect = new Rect(rx + c * (bgSwW + 3f), ry, bgSwW, 16f);
-                        UITheme.DrawColorPreview(swRect, swColor);
-                        if (GUI.Button(swRect, "", GUIStyle.none)) UITheme.SetBgColor(swColor);
-                    }
-                    ry += 22;
+                        GUI.Label(new Rect(rx, ry, colWidth, 18f), $"Hue: {(int)(UITheme.BgH * 360f)}°", UITheme.LabelStyle);
+                        ry += 18f;
+                        float newBH = GUI.HorizontalSlider(new Rect(rx, ry, colWidth, 14f), UITheme.BgH, 0f, 1f);
+                        ry += 20f;
 
-                    GUI.Label(new Rect(rx, ry, colWidth, 18f), $"Hue: {(int)(UITheme.BgH * 360f)}°", UITheme.LabelStyle);
-                    ry += 18f;
-                    float newBH = GUI.HorizontalSlider(new Rect(rx, ry, colWidth, 14f), UITheme.BgH, 0f, 1f);
-                    ry += 20f;
+                        GUI.Label(new Rect(rx, ry, colWidth, 18f), $"Saturation: {(int)(UITheme.BgS * 100f)}%", UITheme.LabelStyle);
+                        ry += 18f;
+                        float newBS = GUI.HorizontalSlider(new Rect(rx, ry, colWidth, 14f), UITheme.BgS, 0f, 1f);
+                        ry += 20f;
 
-                    GUI.Label(new Rect(rx, ry, colWidth, 18f), $"Saturation: {(int)(UITheme.BgS * 100f)}%", UITheme.LabelStyle);
-                    ry += 18f;
-                    float newBS = GUI.HorizontalSlider(new Rect(rx, ry, colWidth, 14f), UITheme.BgS, 0f, 1f);
-                    ry += 20f;
+                        GUI.Label(new Rect(rx, ry, colWidth, 18f), $"Brightness: {(int)(UITheme.BgV * 100f)}%", UITheme.LabelStyle);
+                        ry += 18f;
+                        float newBV = GUI.HorizontalSlider(new Rect(rx, ry, colWidth, 14f), UITheme.BgV, 0f, 1f);
+                        ry += 22f;
 
-                    GUI.Label(new Rect(rx, ry, colWidth, 18f), $"Brightness: {(int)(UITheme.BgV * 100f)}%", UITheme.LabelStyle);
-                    ry += 18f;
-                    float newBV = GUI.HorizontalSlider(new Rect(rx, ry, colWidth, 14f), UITheme.BgV, 0f, 1f);
-                    ry += 22f;
+                        if (Mathf.Abs(newBH - UITheme.BgH) > 0.001f || Mathf.Abs(newBS - UITheme.BgS) > 0.001f || Mathf.Abs(newBV - UITheme.BgV) > 0.001f)
+                        {
+                            UITheme.BgH = newBH; UITheme.BgS = newBS; UITheme.BgV = newBV;
+                            UITheme.CustomBgHex = UITheme.ColorToHex(UITheme.HSVToRGB(newBH, newBS, newBV));
+                            UITheme.ForceRebuild();
+                        }
 
-                    if (Mathf.Abs(newBH - UITheme.BgH) > 0.001f || Mathf.Abs(newBS - UITheme.BgS) > 0.001f || Mathf.Abs(newBV - UITheme.BgV) > 0.001f)
-                    {
-                        UITheme.BgH = newBH; UITheme.BgS = newBS; UITheme.BgV = newBV;
-                        UITheme.CustomBgHex = UITheme.ColorToHex(UITheme.HSVToRGB(newBH, newBS, newBV));
-                        UITheme.ForceRebuild();
-                    }
+                        float my = Mathf.Max(ly, ry) + 15f;
 
-                    y = Mathf.Max(ly, ry) + 15f;
+                        GUI.Box(new Rect(ix, my, iw, 1), "");
+                        my += 10;
 
-                    GUI.Box(new Rect(x, y, contentWidth, 1), "");
-                    y += 10;
+                        GUI.Label(new Rect(ix, my, iw, 18), "<b>⚙️ Window & Controls</b>", UITheme.LabelStyle);
+                        my += 20;
 
-                    GUI.Label(new Rect(x, y, contentWidth, 18), "<b>⚙️ Window & Controls</b>", UITheme.LabelStyle);
-                    y += 20;
+                        GUI.Label(new Rect(ix, my, iw, 16), $"Menu Transparency: {(int)(windowManager.MenuOpacity * 100)}%", UITheme.LabelStyle);
+                        my += 18;
+                        float newOpacity = GUI.HorizontalSlider(new Rect(ix, my, iw, 12), windowManager.MenuOpacity, 0.2f, 1.0f);
+                        if (Mathf.Abs(newOpacity - windowManager.MenuOpacity) > 0.01f)
+                        {
+                            windowManager.MenuOpacity = newOpacity;
+                        }
+                        my += 22;
 
-                    GUI.Label(new Rect(x, y, contentWidth, 16), $"Menu Transparency: {(int)(windowManager.MenuOpacity * 100)}%", UITheme.LabelStyle);
-                    y += 18;
-                    float newOpacity = GUI.HorizontalSlider(new Rect(x, y, contentWidth, 12), windowManager.MenuOpacity, 0.2f, 1.0f);
-                    if (Mathf.Abs(newOpacity - windowManager.MenuOpacity) > 0.01f)
-                    {
-                        windowManager.MenuOpacity = newOpacity;
-                    }
-                    y += 22;
+                        DrawRebindButton(ix, ref my, iw, "Menu Toggle Key", menuKey, 0);
+                        my += 8;
 
-                    DrawRebindButton(x, ref y, contentWidth, "Menu Toggle Key", menuKey, 0);
-                    y += 8;
-
-                    if (GUI.Button(new Rect(x, y, 220f, 22f), "↺ Reset Window Position & Size", UITheme.ButtonStyle))
-                    {
-                        windowManager.ResetWindow();
-                    }
+                        if (GUI.Button(new Rect(ix, my, 220f, 22f), "↺ Reset Window Position & Size", UITheme.ButtonStyle))
+                        {
+                            windowManager.ResetWindow();
+                        }
+                    });
                 }
                 else if (selectedTab == 11) // Вкладка Info
                 {
-                    GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>📖 Hotkeys & Information</b>", UITheme.LabelStyle);
-                    y += 22f;
+                    DrawModuleWithScroll(11, x, y, 520f, (ix, iy, iw) =>
+                    {
+                        GUI.Label(new Rect(ix, iy, iw, 20f), "<b>📖 Hotkeys & Information</b>", UITheme.LabelStyle);
+                        iy += 22f;
 
-                    string infoText =
-                        $"• <b>{menuKey}</b> — Toggle Settings Menu\n" +
-                        $"• <b>{savePosKey}</b> / <b>{loadPosKey}</b> — Save / Load Active Checkpoint\n" +
-                        $"• <b>{prevSlotKey}</b> / <b>{nextSlotKey}</b> — Switch Active Slot (1–5)\n" +
-                        $"• <b>{spawnPosKey}</b> — Teleport to Level Start\n" +
-                        $"• <b>{restartKey}</b> — Reset Current Slot\n" +
-                        "• <b>F3</b> — Toggle Freecam Mode\n" +
-                        "• <b>[ / ]</b> or <b>Numpad - / +</b> — Adjust Game Speed\n" +
-                        "• <b>Numpad 0</b> — Reset Speed to 1.0x\n\n" +
-                        "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.02x in Fix & QoL tab disables the finish trigger to keep leaderboards fair.\n\n" +
-                        "--------------------------------------------------\n" +
-                        "<b>🔥 ULTRA POTATO MODE INFO</b>\n" +
-                        "--------------------------------------------------\n" +
-                        "• <b>Solid Background:</b> Replaces skybox mesh with flat black color to bypass sky shaders.\n" +
-                        "• <b>Extreme Downscaling:</b> Forces maximum texture compression and ultra-low 3D LODs.\n" +
-                        "• <b>Far Clip Distance:</b> Limits camera render distance to 30m to drop distant geometry.\n" +
-                        "• <b>Light Suppression:</b> Disables Point/Spot lights and real-time shadow calculations.\n" +
-                        "• <b>Uncapped Latency:</b> Sets V-Sync to 0 and queued frames to 0 for minimum input lag.\n\n" +
-                        "<b>📺 Resolution Presets:</b>\n" +
-                        "• <b>480p Full:</b> Stretches pixelated 480x270 viewport across full monitor for max FPS.\n" +
-                        "• <b>480p Window:</b> Switches game into a compact 480x270 window.\n" +
-                        "• <b>Native Res:</b> Restores your monitor's original screen resolution.";
+                        string infoText =
+                            $"• <b>{menuKey}</b> — Toggle Settings Menu\n" +
+                            $"• <b>{savePosKey}</b> / <b>{loadPosKey}</b> — Save / Load Active Checkpoint\n" +
+                            $"• <b>{prevSlotKey}</b> / <b>{nextSlotKey}</b> — Switch Active Slot (1–5)\n" +
+                            $"• <b>{spawnPosKey}</b> — Teleport to Level Start\n" +
+                            $"• <b>{restartKey}</b> — Reset Current Slot\n" +
+                            "• <b>F3</b> — Toggle Freecam Mode\n" +
+                            "• <b>[ / ]</b> or <b>Numpad - / +</b> — Adjust Game Speed\n" +
+                            "• <b>Numpad 0</b> — Reset Speed to 1.0x\n\n" +
+                            "<b>Anti-Cheat Note:</b> Setting Force Multipliers outside 1.00x–1.0190/1.0180x in Fix & QoL tab disables the finish trigger to keep leaderboards fair.\n\n" +
+                            "--------------------------------------------------\n" +
+                            "<b>🔥 ULTRA POTATO MODE INFO</b>\n" +
+                            "--------------------------------------------------\n" +
+                            "• <b>Solid Background:</b> Replaces skybox mesh with flat black color to bypass sky shaders.\n" +
+                            "• <b>Extreme Downscaling:</b> Forces maximum texture compression and ultra-low 3D LODs.\n" +
+                            "• <b>Far Clip Distance:</b> Limits camera render distance to 30m to drop distant geometry.\n" +
+                            "• <b>Light Suppression:</b> Disables Point/Spot lights and real-time shadow calculations.\n" +
+                            "• <b>Uncapped Latency:</b> Sets V-Sync to 0 and queued frames to 0 for minimum input lag.\n\n" +
+                            "<b>📺 Resolution Presets:</b>\n" +
+                            "• <b>480p Full:</b> Stretches pixelated 480x270 viewport across full monitor for max FPS.\n" +
+                            "• <b>480p Window:</b> Switches game into a compact 480x270 window.\n" +
+                            "• <b>Native Res:</b> Restores your monitor's original screen resolution.";
 
-                    GUI.Label(new Rect(x, y, contentWidth, 520f), infoText, UITheme.LabelStyle);
+                        GUI.Label(new Rect(ix, iy, iw, 500f), infoText, UITheme.LabelStyle);
+                    });
                 }
             });
         }
@@ -940,14 +1061,12 @@ namespace SpeedrunToolkitMod
         }
     }
 
-    // 1. Блокировка кликов сквозь UI мода в IL2CPP
     [HarmonyPatch]
     public static class BlockClickThrough_Patch
     {
         [HarmonyTargetMethod]
         public static MethodBase TargetMethod()
         {
-            // Динамически находит метод Raycast в IL2CPP-обертке GraphicRaycaster без жесткого указания параметров
             return AccessTools.FirstMethod(typeof(GraphicRaycaster), m => m.Name == "Raycast");
         }
 
@@ -958,7 +1077,6 @@ namespace SpeedrunToolkitMod
         }
     }
 
-    // 2. Автоматическое удержание и показ курсора во всех меню
     [HarmonyPatch(typeof(EventSystem), nameof(EventSystem.Update))]
     public static class SmartCursorRestore_Patch
     {
@@ -978,7 +1096,6 @@ namespace SpeedrunToolkitMod
             bool inScoreBoard = (scoreBoard != null && scoreBoard.gameObject.activeSelf);
             bool isGameplay = (fps != null && fps.enabled && !inScoreBoard);
 
-            // Если игрок не бегает на карте — гарантируем активный и видимый курсор
             if (!isGameplay)
             {
                 Cursor.lockState = CursorLockMode.None;

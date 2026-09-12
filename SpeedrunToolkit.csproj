@@ -87,6 +87,10 @@
     <Reference Include="Unity.Postprocessing.Runtime">
       <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Il2CppAssemblies\Unity.Postprocessing.Runtime.dll</HintPath>
     </Reference>
+    <Reference Include="Unity.TextMeshPro, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Dependencies\Il2CppAssemblyGenerator\Cpp2IL\cpp2il_out\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>E:\SteamLibrary\steamapps\common\Run Pro\MelonLoader\Il2CppAssemblies\UnityEngine.dll</HintPath>
     </Reference>

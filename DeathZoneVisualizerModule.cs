@@ -6,8 +6,8 @@ namespace SpeedrunToolkitMod
 {
     public class DeathZoneVisualizerModule
     {
-        public bool IsVisualsOn = true;
-        public bool XRay = true;
+        public bool IsVisualsOn = false;
+        public bool XRay = false;
         public bool WireframeMode = false;
         public float Transparency = 0.5f;
         public float ColorR = 1.0f;

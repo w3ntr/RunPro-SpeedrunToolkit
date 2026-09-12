@@ -1,6 +1,7 @@
 using Il2Cpprunpro.SO;
 using System.Collections.Generic;
 using UnityEngine;
+using TMPro;
 
 namespace SpeedrunToolkitMod
 {
@@ -38,13 +39,44 @@ namespace SpeedrunToolkitMod
         private Rigidbody playerRb;
         private CharacterController playerCc;
         private float lastPosTime;
+
+        // --- Custom Text Variables & Config ---
+        public static bool EnableCustomText = false;
+        public static string CustomTextContent = "Custom Text";
+        public static float CustomTextSize = 28f;
+        public static Color CustomTextColor = Color.white;
+        public static float CustomTextPosX = 20f;
+        public static float CustomTextPosY = 0f;
+        private static TextMeshProUGUI customTextUI;
+        public static FontStyle CustomTextFontStyle = FontStyle.Bold;
+        public static string CustomTextHex = "#FFFFFF";
+        public static float CustomTextH = 0f, CustomTextS = 0f, CustomTextV = 1f, CustomTextA = 1f;
+
+        // HSV состояния интерфейса спидометра
+        public float ValueH = 0.5f, ValueS = 1f, ValueV = 1f, ValueA = 1f;
+        public float LabelH = 0.5f, LabelS = 1f, LabelV = 1f, LabelA = 1f;
+
         public void Init()
         {
             LoadConfig();
             UpdateBgTexture();
             FindPlayerRanksSO();
         }
-            public void SaveConfig()
+
+        public static void InitCustomText(GameObject hudCanvas)
+        {
+            if (customTextUI != null) return;
+
+            GameObject textObj = new GameObject("HUD_CustomText");
+            textObj.transform.SetParent(hudCanvas.transform, false);
+
+            customTextUI = textObj.AddComponent<TextMeshProUGUI>();
+            customTextUI.font = TMP_FontAsset.CreateFontAsset(Resources.GetBuiltinResource<Font>("Arial.ttf"));
+
+            ApplyCustomTextSettings();
+        }
+
+        public void SaveConfig()
         {
             PlayerPrefs.SetString("Speedo_LabelHex", LabelHex);
             PlayerPrefs.SetString("Speedo_ValueHex", ValueHex);
@@ -60,12 +92,21 @@ namespace SpeedrunToolkitMod
             PlayerPrefs.SetInt("Speedo_ShowAngles", ShowAngles ? 1 : 0);
             PlayerPrefs.SetInt("Speedo_ShowXP", ShowXP ? 1 : 0);
             PlayerPrefs.SetInt("Speedo_HideNative", HideNativeSpeedo ? 1 : 0);
+
+            // Сохранение Custom Text
+            PlayerPrefs.SetInt("CustomText_Enable", EnableCustomText ? 1 : 0);
+            PlayerPrefs.SetString("CustomText_Content", CustomTextContent);
+            PlayerPrefs.SetFloat("CustomText_Size", CustomTextSize);
+            PlayerPrefs.SetFloat("CustomText_PosX", CustomTextPosX);
+            PlayerPrefs.SetFloat("CustomText_PosY", CustomTextPosY);
+            PlayerPrefs.SetInt("CustomText_FontStyle", (int)CustomTextFontStyle);
+            PlayerPrefs.SetString("CustomText_Hex", CustomTextHex);
+
             PlayerPrefs.Save();
         }
 
         public void LoadConfig()
         {
-            // Загружаем с фиксированными дефолтами по умолчанию
             LabelHex = PlayerPrefs.GetString("Speedo_LabelHex", "#FFFFFF");
             ValueHex = PlayerPrefs.GetString("Speedo_ValueHex", "#00E5FF");
             BgHex = PlayerPrefs.GetString("Speedo_BgHex", "#000000");
@@ -81,10 +122,80 @@ namespace SpeedrunToolkitMod
             ShowXP = PlayerPrefs.GetInt("Speedo_ShowXP", 1) == 1;
             HideNativeSpeedo = PlayerPrefs.GetInt("Speedo_HideNative", 1) == 1;
 
-            // Обязательно синхронизируем HSV слайдеры под загруженные цвета
+            // Загрузка Custom Text
+            EnableCustomText = PlayerPrefs.GetInt("CustomText_Enable", 1) == 1;
+            CustomTextContent = PlayerPrefs.GetString("CustomText_Content", "Custom Text");
+            CustomTextSize = PlayerPrefs.GetFloat("CustomText_Size", 28f);
+            CustomTextPosX = PlayerPrefs.GetFloat("CustomText_PosX", 20f);
+            CustomTextPosY = PlayerPrefs.GetFloat("CustomText_PosY", 0f);
+            CustomTextFontStyle = (FontStyle)PlayerPrefs.GetInt("CustomText_FontStyle", (int)FontStyle.Bold);
+            CustomTextHex = PlayerPrefs.GetString("CustomText_Hex", "#FFFFFF");
+
             SyncValueHSVFromHex();
             SyncLabelHSVFromHex();
+            SyncCustomTextHSVFromHex();
             UpdateBgTexture();
+        }
+
+        public static void SyncCustomTextHSVFromHex()
+        {
+            if (ColorUtility.TryParseHtmlString(CustomTextHex, out Color col))
+            {
+                CustomTextColor = col;
+                Color.RGBToHSV(col, out CustomTextH, out CustomTextS, out CustomTextV);
+                CustomTextA = col.a;
+            }
+        }
+
+        public static void ApplyCustomTextSettings()
+        {
+            if (customTextUI == null) return;
+
+            customTextUI.gameObject.SetActive(EnableCustomText);
+            if (!EnableCustomText) return;
+
+            customTextUI.text = CustomTextContent;
+            customTextUI.fontSize = CustomTextSize;
+            customTextUI.color = CustomTextColor;
+
+            RectTransform rect = customTextUI.rectTransform;
+            rect.anchorMin = new Vector2(0, 1);
+            rect.anchorMax = new Vector2(0, 1);
+            rect.pivot = new Vector2(0, 1);
+            rect.anchoredPosition = new Vector2(CustomTextPosX, CustomTextPosY);
+        }
+
+        private static void SetTextAnchor(RectTransform rect, TextAnchor anchor)
+        {
+            switch (anchor)
+            {
+                case TextAnchor.UpperLeft:
+                    rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 1);
+                    rect.anchoredPosition = new Vector2(20, -20);
+                    break;
+                case TextAnchor.UpperRight:
+                    rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1, 1);
+                    rect.anchoredPosition = new Vector2(-20, -20);
+                    break;
+                case TextAnchor.LowerLeft:
+                    rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 0);
+                    rect.anchoredPosition = new Vector2(20, 20);
+                    break;
+                case TextAnchor.LowerRight:
+                    rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1, 0);
+                    rect.anchoredPosition = new Vector2(1, 0);
+                    rect.anchoredPosition = new Vector2(-20, 20);
+                    break;
+            }
+        }
+
+        public static string ColorToHexRGBA(Color col)
+        {
+            byte r = (byte)(Mathf.Clamp01(col.r) * 255);
+            byte g = (byte)(Mathf.Clamp01(col.g) * 255);
+            byte b = (byte)(Mathf.Clamp01(col.b) * 255);
+            byte a = (byte)(Mathf.Clamp01(col.a) * 255);
+            return $"#{r:X2}{g:X2}{b:X2}{a:X2}";
         }
 
         public Color ParseColor(string hex, Color defaultColor)
@@ -100,10 +211,6 @@ namespace SpeedrunToolkitMod
             }
             return defaultColor;
         }
-
-        // Храним HSV состояния внутри модуля, чтобы GUI не зацикливался
-        public float ValueH = 0.5f, ValueS = 1f, ValueV = 1f, ValueA = 1f;
-        public float LabelH = 0.5f, LabelS = 1f, LabelV = 1f, LabelA = 1f;
 
         public void SyncValueHSVFromHex()
         {
@@ -246,7 +353,6 @@ namespace SpeedrunToolkitMod
             Vector3 horizontalDelta = new Vector3(currentPos.x - lastPosition.x, 0f, currentPos.z - lastPosition.z);
             float sqrDist = horizontalDelta.sqrMagnitude;
 
-            // Регистрация движения строго при смене координат
             if (sqrDist > 0.0001f)
             {
                 float timePassed = Time.time - lastPosTime;
@@ -260,7 +366,6 @@ namespace SpeedrunToolkitMod
             }
             else if (Time.time - lastPosTime > 0.12f)
             {
-                // Если игрок не двигается дольше 120мс — гасим скорость до 0
                 currentSpeed = Mathf.Lerp(currentSpeed, 0f, Time.deltaTime * 10f);
             }
         }
@@ -283,17 +388,35 @@ namespace SpeedrunToolkitMod
             if (player != null)
             {
                 playerObj = player;
-
-                // Пробуем зацепить физические компоненты игрока
                 playerRb = player.GetComponent<Rigidbody>() ?? player.GetComponentInChildren<Rigidbody>();
                 playerCc = player.GetComponent<CharacterController>() ?? player.GetComponentInChildren<CharacterController>();
-
                 lastPosition = player.transform.position;
             }
         }
 
         public void OnGUI()
         {
+            // Отрисовка Custom Text (один блок, дублирующий убран)
+            if (EnableCustomText && !string.IsNullOrEmpty(CustomTextContent))
+            {
+                Color textColor;
+                if (!ColorUtility.TryParseHtmlString(CustomTextHex, out textColor))
+                {
+                    textColor = Color.white;
+                }
+
+                GUIStyle customTextStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = (int)CustomTextSize,
+                    fontStyle = CustomTextFontStyle,
+                    alignment = TextAnchor.UpperLeft
+                };
+                customTextStyle.normal.textColor = textColor;
+
+                Vector2 size = customTextStyle.CalcSize(new GUIContent(CustomTextContent));
+                GUI.Label(new Rect(CustomTextPosX, CustomTextPosY, size.x + 50f, size.y + 20f), CustomTextContent, customTextStyle);
+            }
+
             if (!IsEnabled || playerObj == null) return;
 
             int lines = 0;

@@ -418,22 +418,15 @@ namespace SpeedrunToolkitMod
 
 
 
-        public float DrawUI(float startX, float startY, float width)
+        public void DrawUI(float startX, float startY, float width)
         {
-            // Фиксируем общую высоту окна на 310f, чтобы не залезать на нижнюю панель
-            outerScrollPosition = GUI.BeginScrollView(
-                new Rect(startX, startY, width, 310f),
-                outerScrollPosition,
-                new Rect(0, 0, width - 25f, 520f)
-            );
+            float y = startY + 5f;
+            float contentWidth = width - 10f;
 
-            float y = 5f;
-            float contentWidth = width - 25f;
-
-            GUI.Label(new Rect(0, y, contentWidth, 20), "<b>Custom Music Replacer Settings:</b>");
+            GUI.Label(new Rect(startX, y, contentWidth, 20), "<b>Custom Music Replacer Settings:</b>");
             y += 24f;
 
-            bool newEnable = GUI.Toggle(new Rect(0, y, contentWidth, 20), EnableMusicReplacer, " Enable Music Replacer");
+            bool newEnable = GUI.Toggle(new Rect(startX, y, contentWidth, 20), EnableMusicReplacer, " Enable Music Replacer");
             if (newEnable != EnableMusicReplacer)
             {
                 EnableMusicReplacer = newEnable;
@@ -442,15 +435,11 @@ namespace SpeedrunToolkitMod
             }
             y += 25f;
 
-            if (!EnableMusicReplacer)
-            {
-                GUI.EndScrollView();
-                return 310f;
-            }
+            if (!EnableMusicReplacer) return;
 
-            GUI.Label(new Rect(0, y, contentWidth, 18), $"Volume: {(int)(MasterVolume * 100)}%");
+            GUI.Label(new Rect(startX, y, contentWidth, 18), $"Volume: {(int)(MasterVolume * 100)}%");
             y += 20f;
-            float newVol = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 16), MasterVolume, 0f, 1f);
+            float newVol = GUI.HorizontalSlider(new Rect(startX, y, contentWidth, 16), MasterVolume, 0f, 1f);
             if (Mathf.Abs(newVol - MasterVolume) > 0.01f)
             {
                 MasterVolume = newVol;
@@ -459,9 +448,9 @@ namespace SpeedrunToolkitMod
             }
             y += 24f;
 
-            GUI.Label(new Rect(0, y, contentWidth, 18), $"Speed & Pitch: {PitchMultiplier:F2}x");
+            GUI.Label(new Rect(startX, y, contentWidth, 18), $"Speed & Pitch: {PitchMultiplier:F2}x");
             y += 20f;
-            float newPitch = GUI.HorizontalSlider(new Rect(0, y, contentWidth, 16), PitchMultiplier, 0.5f, 2.0f);
+            float newPitch = GUI.HorizontalSlider(new Rect(startX, y, contentWidth, 16), PitchMultiplier, 0.5f, 2.0f);
             if (Mathf.Abs(newPitch - PitchMultiplier) > 0.01f)
             {
                 PitchMultiplier = newPitch;
@@ -471,64 +460,61 @@ namespace SpeedrunToolkitMod
             }
             y += 26f;
 
-            GUI.Label(new Rect(0, y, contentWidth, 18), $"Mode: <b>{Mode}</b>");
+            GUI.Label(new Rect(startX, y, contentWidth, 18), $"Mode: <b>{Mode}</b>");
             y += 20f;
             float btnWidth = (contentWidth - 10f) / 3f;
-            if (GUI.Button(new Rect(0, y, btnWidth, 22), "Selected")) { Mode = ReplaceMode.SelectedTrack; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
-            if (GUI.Button(new Rect(btnWidth + 5f, y, btnWidth, 22), "By Name")) { Mode = ReplaceMode.ByName; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
-            if (GUI.Button(new Rect((btnWidth + 5f) * 2f, y, btnWidth, 22), "Shuffle")) { Mode = ReplaceMode.Shuffle; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
+            if (GUI.Button(new Rect(startX, y, btnWidth, 22), "Selected")) { Mode = ReplaceMode.SelectedTrack; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
+            if (GUI.Button(new Rect(startX + btnWidth + 5f, y, btnWidth, 22), "By Name")) { Mode = ReplaceMode.ByName; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
+            if (GUI.Button(new Rect(startX + (btnWidth + 5f) * 2f, y, btnWidth, 22), "Shuffle")) { Mode = ReplaceMode.Shuffle; configMode.Value = (int)Mode; configCategory.SaveToFile(); }
             y += 30f;
 
-            GUI.Label(new Rect(0, y, contentWidth, 18), $"Playing: <i>{lastReplacedTrack}</i> | Loaded Tracks: {customClipNames.Count}");
+            GUI.Label(new Rect(startX, y, contentWidth, 18), $"Playing: <i>{lastReplacedTrack}</i> | Loaded Tracks: {customClipNames.Count}");
             y += 24f;
 
-            // Внутренний скролл-бокс для списка файлов
-            float boxHeight = 180f;
-            GUI.Box(new Rect(0, y, contentWidth, boxHeight), "Available Custom Songs (.mp3 / .wav)");
-            Rect scrollOuterRect = new Rect(5, y + 22, contentWidth - 10, boxHeight - 28);
-            float innerHeight = Mathf.Max(boxHeight - 28, customClipNames.Count * 24);
-            Rect scrollContentRect = new Rect(0, 0, contentWidth - 28, innerHeight);
+            GUI.Label(new Rect(startX, y, contentWidth, 20), "<b>Available Custom Songs (.mp3 / .wav):</b>");
+            y += 22f;
 
-            scrollPosition = GUI.BeginScrollView(scrollOuterRect, scrollPosition, scrollContentRect);
-
-            for (int i = 0; i < customClipNames.Count; i++)
+            if (customClipNames.Count == 0)
             {
-                string songName = customClipNames[i];
-                int maxChars = Mathf.Max(12, (int)((contentWidth - 130) / 7.5f));
-                string displayName = songName.Length > maxChars ? songName.Substring(0, maxChars - 3) + "..." : songName;
-
-                float itemY = i * 24;
-                bool isSelected = (songName == SelectedTrackName);
-
-                GUI.Label(new Rect(5, itemY + 2, contentWidth - 130, 20), isSelected ? $"<b>> {displayName}</b>" : displayName);
-
-                if (GUI.Button(new Rect(contentWidth - 115, itemY, 50, 20), "Select"))
+                GUI.Label(new Rect(startX + 10, y, contentWidth - 10, 20), "<color=#888888>No tracks found in CustomMusic folder.</color>");
+                y += 24f;
+            }
+            else
+            {
+                for (int i = 0; i < customClipNames.Count; i++)
                 {
-                    SelectedTrackName = songName;
-                    configSelectedTrack.Value = SelectedTrackName;
-                    configCategory.SaveToFile();
-                }
+                    string songName = customClipNames[i];
+                    int maxChars = Mathf.Max(12, (int)((contentWidth - 130) / 7.5f));
+                    string displayName = songName.Length > maxChars ? songName.Substring(0, maxChars - 3) + "..." : songName;
 
-                if (GUI.Button(new Rect(contentWidth - 60, itemY, 45, 20), "Play"))
-                {
-                    SelectedTrackName = songName;
-                    configSelectedTrack.Value = SelectedTrackName;
-                    configCategory.SaveToFile();
-                    ForcePlaySong(songName);
+                    bool isSelected = (songName == SelectedTrackName);
+
+                    GUI.Label(new Rect(startX + 5, y + 2, contentWidth - 130, 20), isSelected ? $"<b>> {displayName}</b>" : displayName);
+
+                    if (GUI.Button(new Rect(startX + contentWidth - 115, y, 50, 20), "Select"))
+                    {
+                        SelectedTrackName = songName;
+                        configSelectedTrack.Value = SelectedTrackName;
+                        configCategory.SaveToFile();
+                    }
+
+                    if (GUI.Button(new Rect(startX + contentWidth - 60, y, 45, 20), "Play"))
+                    {
+                        SelectedTrackName = songName;
+                        configSelectedTrack.Value = SelectedTrackName;
+                        configCategory.SaveToFile();
+                        ForcePlaySong(songName);
+                    }
+
+                    y += 24f;
                 }
             }
 
-            GUI.EndScrollView();
-            y += boxHeight + 10f;
-
-            if (GUI.Button(new Rect(0, y, contentWidth, 24), "Rescan CustomMusic Folder"))
+            y += 10f;
+            if (GUI.Button(new Rect(startX, y, contentWidth, 24), "🔄 Rescan CustomMusic Folder"))
             {
                 LoadAllCustomMusic();
             }
-            y += 30f;
-
-            GUI.EndScrollView();
-            return 310f;
         }
 
         private void UpdateAllSourcesPitch()
