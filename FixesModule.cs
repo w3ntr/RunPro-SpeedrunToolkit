@@ -8,7 +8,7 @@ namespace SpeedrunToolkitMod
     {
         public static bool EnableJumperFix = false;
         public static bool EnableBoosterFix = false;
-        public static bool EnableLedgeFix = true;
+        public static bool EnableLedgeFix = false; // По умолчанию OFF для сохранения физики v5.5
         public static bool AutoRespawnOnDeath = false;
         public static bool hasAbusedThisSession = false;
 
@@ -127,8 +127,16 @@ namespace SpeedrunToolkitMod
                 y += 25f;
             }
 
+            // --- LEDGE FIX TOGGLE ---
+            bool newLedgeFix = GUI.Toggle(new Rect(x, y, contentWidth, 20), EnableLedgeFix, " Enable Thin Edge & Ledge Collision Fix");
+            if (newLedgeFix != EnableLedgeFix)
+            {
+                EnableLedgeFix = newLedgeFix;
+                ApplyLedgeFixToActiveController();
+            }
+            y += 25f;
+
             // --- VISUAL HELPERS ---
-            y += 10f;
             GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>Visual Helpers</b>", UITheme.LabelStyle);
             y += 22f;
 
@@ -152,7 +160,6 @@ namespace SpeedrunToolkitMod
             y += 25f;
 
             // --- GENERAL QOL ---
-            y += 10f;
             GUI.Label(new Rect(x, y, contentWidth, 20f), "<b>General QoL</b>", UITheme.LabelStyle);
             y += 22f;
 
@@ -177,6 +184,24 @@ namespace SpeedrunToolkitMod
             y += 28f;
         }
 
+        private static void ApplyLedgeFixToActiveController()
+        {
+            var fps = Object.FindObjectOfType<FirstPersonController>();
+            if (fps != null && fps.m_CharacterController != null)
+            {
+                if (EnableLedgeFix)
+                {
+                    fps.m_CharacterController.skinWidth = 0.005f;
+                    fps.m_CharacterController.minMoveDistance = 0f;
+                }
+                else
+                {
+                    fps.m_CharacterController.skinWidth = ControllerSetup_Patch.defaultSkinWidth;
+                    fps.m_CharacterController.minMoveDistance = ControllerSetup_Patch.defaultMinMoveDistance;
+                }
+            }
+        }
+
         public static void CheckFinishAbuse()
         {
             bool isJumperAbused = EnableJumperFix && (JumperForceMultiplier < MinJumperLimit || JumperForceMultiplier > MaxJumperLimit);
@@ -187,7 +212,6 @@ namespace SpeedrunToolkitMod
                 hasAbusedThisSession = true;
             }
 
-            // Финиш выключается, если сейчас абуз ИЛИ если абуз был совершен в течение этой попытки
             bool shouldDisableFinish = isJumperAbused || isBoosterAbused || hasAbusedThisSession;
 
             GameObject[] allObjects = Object.FindObjectsOfType<GameObject>(true);
@@ -203,7 +227,7 @@ namespace SpeedrunToolkitMod
 
         public void OnSceneWasLoaded(string sceneName)
         {
-            hasAbusedThisSession = false; // При смене уровня сбрасываем флаг
+            hasAbusedThisSession = false;
         }
 
         // --- ПАТЧ МГНОВЕННОГО РЕСПАВНА ПРИ ПАДЕНИИ ---
@@ -242,38 +266,70 @@ namespace SpeedrunToolkitMod
         [HarmonyPatch(typeof(FirstPersonController), "Start")]
         public static class ControllerSetup_Patch
         {
+            public static float defaultSkinWidth = 0.08f;
+            public static float defaultMinMoveDistance = 0.001f;
+            private static bool capturedDefaults = false;
+
             [HarmonyPostfix]
             public static void Postfix(FirstPersonController __instance)
             {
                 if (__instance.m_CharacterController != null)
                 {
-                    __instance.m_CharacterController.skinWidth = 0.005f;
-                    __instance.m_CharacterController.minMoveDistance = 0f;
+                    if (!capturedDefaults)
+                    {
+                        defaultSkinWidth = __instance.m_CharacterController.skinWidth;
+                        defaultMinMoveDistance = __instance.m_CharacterController.minMoveDistance;
+                        capturedDefaults = true;
+                    }
+
+                    if (FixesModule.EnableLedgeFix)
+                    {
+                        __instance.m_CharacterController.skinWidth = 0.005f;
+                        __instance.m_CharacterController.minMoveDistance = 0f;
+                    }
                 }
             }
         }
 
+        // --- ФИКС ТОНКИХ БЛОКОВ И КРАЕВ (БЕЗ ИЗМЕНЕНИЯ SKINWIDTH) ---
         [HarmonyPatch(typeof(FirstPersonController), "FixedUpdate")]
         public static class ThinEdgeFix_Patch
         {
+            private static float originalStepOffset = 0.3f;
+            private static bool capturedDefault = false;
+
             [HarmonyPrefix]
-            public static void Prefix(FirstPersonController __instance)
+            public static bool Prefix(FirstPersonController __instance)
             {
-                if (!FixesModule.EnableLedgeFix) return;
-
                 var controller = __instance.m_CharacterController;
-                if (controller == null) return;
+                if (controller == null) return true;
 
-                Vector3 origin = __instance.transform.position;
-                float checkDistance = (controller.height / 2f) + 0.1f;
-
-                if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, checkDistance))
+                if (!capturedDefault)
                 {
-                    if (hit.normal.y > 0.5f)
+                    originalStepOffset = controller.stepOffset;
+                    capturedDefault = true;
+                }
+
+                if (FixesModule.EnableLedgeFix)
+                {
+                    Vector3 origin = __instance.transform.position;
+                    float checkDistance = (controller.height / 2f) + 0.1f;
+
+                    if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, checkDistance))
                     {
-                        controller.stepOffset = 0.3f;
+                        if (hit.normal.y > 0.5f)
+                        {
+                            // Подняли с 0.4f до 0.42f для идеального сцепления с краем
+                            controller.stepOffset = 0.45f;
+                        }
                     }
                 }
+                else
+                {
+                    controller.stepOffset = originalStepOffset;
+                }
+
+                return true;
             }
         }
 

@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "6.1.0", "w3ntr")]
+[assembly: MelonInfo(typeof(SpeedrunToolkitMod.Main), "Speedrun Toolkit", "6.2.0", "w3ntr")]
 [assembly: MelonGame(null, null)]
 
 namespace SpeedrunToolkitMod
@@ -269,17 +269,26 @@ namespace SpeedrunToolkitMod
             return false;
         }
 
-        private void ToggleMenuState(bool newState)
+        public static void ToggleMenuState()
         {
-            showMenu = newState;
+            showMenu = !showMenu;
 
-            if (showMenu)
+            if (!showMenu)
             {
-                Cursor.visible = true;
-            }
-            else
-            {
-                SaveConfig();
+                BuildSystemCamera buildCam = Object.FindObjectOfType<BuildSystemCamera>();
+                if (buildCam != null && buildCam.enabled)
+                {
+                    // Пока зажата ПКМ — вращаем камеру
+                    if (Input.GetMouseButton(1))
+                    {
+                        InputManager inputMgr = Object.FindObjectOfType<InputManager>();
+                        if (inputMgr != null && inputMgr.input != null)
+                        {
+                            inputMgr.input.look_x = Input.GetAxis("Mouse X");
+                            inputMgr.input.look_y = Input.GetAxis("Mouse Y");
+                        }
+                    }
+                }
             }
         }
 
@@ -293,7 +302,34 @@ namespace SpeedrunToolkitMod
 
             if (Input.GetKeyDown(menuKey))
             {
-                ToggleMenuState(!showMenu);
+                ToggleMenuState();
+            }
+
+            if (!showMenu)
+            {
+                BuildSystemCamera buildCam = Object.FindObjectOfType<BuildSystemCamera>();
+                if (buildCam != null && buildCam.enabled)
+                {
+                    // Проверяем непрерывное удержание ПКМ
+                    if (Input.GetMouseButton(1))
+                    {
+                        Cursor.lockState = CursorLockMode.Locked;
+                        Cursor.visible = false;
+
+                        // Обходим проверку lockState в InputManager и насильно записываем оси мыши
+                        InputManager inputMgr = Object.FindObjectOfType<InputManager>();
+                        if (inputMgr != null && inputMgr.input != null)
+                        {
+                            inputMgr.input.look_x = Input.GetAxis("Mouse X");
+                            inputMgr.input.look_y = Input.GetAxis("Mouse Y");
+                        }
+                    }
+                    else if (Input.GetMouseButtonUp(1))
+                    {
+                        Cursor.lockState = CursorLockMode.None;
+                        Cursor.visible = true;
+                    }
+                }
             }
 
             if (activeRebindIndex != -1)
@@ -486,7 +522,7 @@ namespace SpeedrunToolkitMod
 
         private void DrawSettingsMenu()
         {
-            windowManager.Draw("Speedrun Toolkit v6.1.0", (id) =>
+            windowManager.Draw("Speedrun Toolkit v6.2.0", (id) =>
             {
                 float x = 12f;
                 float y = 30f;
