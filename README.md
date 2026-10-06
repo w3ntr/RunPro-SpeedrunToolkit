@@ -1,4 +1,4 @@
-# Speedrun Toolkit
+9# Speedrun Toolkit
 
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-.NET%206%20%2F%20IL2CPP-green)
 ![Unity Version](https://img.shields.io/badge/Unity-2021%2B-blue)
@@ -48,20 +48,20 @@
   * **Gray:** `RGBA(0.30, 0.30, 0.70, 0.70)`
 * **Transform Controls:** Full dynamic scaling (0.6x - 2.0x) and absolute screen-space coordinate positioning.
 
-### Physics Patching and Determinism
-* **Deterministic Jumpers:** Normalizes jump box forces across varying frame rates (0.500x - 2.000x multiplier).
+### Physics Patching and Determinism (Removed)
+* **Deterministic Jumpers:** Normalizes jump box forces across varying frame rates (1.000x - 1.025x multiplier).
 * **Deterministic Boosters:** Eliminates Unity `CharacterController` grounded-state friction bugs by applying a 0.15m vertical offset and a 0.15s trigger debounce window.
 * **Visual Helpers:** Optional rendering of vector flight trajectories and interactive trigger bounds.
 * **Anti-Abuse Verification:** Automatically invalidates and disables level completion triggers if physics constants exceed non-standard values.
 
 ### Graphics and Performance Optimization
 * **Ultra Potato Resolution Presets:** Quick hardware-downscaling toggles including 480p Fullscreen, 480p Windowed, and extreme pixel render targets (320x240 4:3 and 320x180 16:9).
-* **Custom Skybox Manager:** Dynamic cycling between native scene skyboxes, solid black background, and external custom skybox images (`.png` / `.jpg`) loaded from disk.
+* **Custom Skybox Manager:** Dynamic cycling between native scene skyboxes, solid black background, and external custom skybox images (`.png` / `.jpg`) loaded from disk. (Old version)
 * **Draw & Shadow Distance Override:** Independent distance control sliders allowing custom Camera Render Distance (50m - 3000m) and Shadow Distance (0m - 500m).
 * **Rendering Pipelines Toggles:** Ability to independently disable Post-Processing (Bloom, FX) and global shadows for maximum framerate stability.
 * **FPS Limiter & Presets:** Granular target frame rate input with standard high-refresh rate presets (Max, 60, 120, 144, 240, 360 FPS).
 * **Texture Downscaling & Interface Cleaners:** Texture resolution scaling (High, Medium, Low) along with toggles to hide first-person hand meshes and the native game HUD.
-* **Dark Mode GUI Theme:** Dark interface overlay style with adaptive dynamic UI scroll height calculation.
+* **Dark Mode:** Dark objects, boost FPS
 
 ### Audio and Custom Music Replacer
 * **Independent Audio Manager:** Background audio controller capable of scanning, loading, and replacing game tracks with local `.mp3` and `.wav` audio files.
@@ -154,9 +154,9 @@ Run Pro/
 
 4. (Optional) Place custom audio assets (.wav or .mp3) into UserData/CustomMusic/.
 
-5. (Optional) Place custom skybox textures (.png or .jpg) into UserData/CustomSkyboxes/.
+5. (Optional, old version) Place custom skybox textures (.png or .jpg) into UserData/CustomSkyboxes/.
 
-6. (Optional) Place custom mesh assets (tungtung.obj, tungtung.png) into UserData/SpeedrunToolkit/.
+6. (Optional, old version) Place custom mesh assets (tungtung.obj, tungtung.png) into UserData/SpeedrunToolkit/.
 
 7. Launch the executable. Configuration files will automatically generate in UserData/MelonPreferences.cfg.
 
