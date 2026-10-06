@@ -1,4 +1,4 @@
-9# Speedrun Toolkit
+# Speedrun Toolkit
 
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-.NET%206%20%2F%20IL2CPP-green)
 ![Unity Version](https://img.shields.io/badge/Unity-2021%2B-blue)
