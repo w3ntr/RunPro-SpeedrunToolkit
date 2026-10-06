@@ -20,7 +20,7 @@
 * **Native OSD Suppression:** Option to disable the default game speedometer for cleaner recording streams.
 * **Custom Crosshair System:** Modular reticle generator featuring Dot, Cross, and Cross-Out styles with customizable length, gap, thickness, outline, and RGBA opacity.
 
-### Custom 3D Model Integration (Tung Tung Sahur)
+### Custom 3D Model Integration (Tung Tung Sahur. Old version!)
 * **Procedural Mesh Loading:** Native parsing and rendering of external `.obj` geometry and texture assets (`.png` / `.jpg`) directly from the local environment.
 * **Velocity-Based Motion Controller:** Dynamic procedural sway, tilt, and vertical bounce algorithms tied to player ground speed and movement states.
 * **Toggle Controls:** Independent runtime toggling via menu controls or keybind (**F7**).
@@ -80,7 +80,6 @@
 | Action | Keybinding | Module Context |
 | :--- | :---: | :--- |
 | **Toggle Toolkit Menu** | `F8` | Global Interface |
-| **Toggle Custom Music Player** | `F7` | Audio Module |
 | **Toggle Tung Tung Model** | `F7` | Model Module |
 | **Save Checkpoint State** | `F9` | Practice Module |
 | **Load Checkpoint State** | `F10` | Practice Module |
