@@ -20,7 +20,7 @@
 * **Native OSD Suppression:** Option to disable the default game speedometer for cleaner recording streams.
 * **Custom Crosshair System:** Modular reticle generator featuring Dot, Cross, and Cross-Out styles with customizable length, gap, thickness, outline, and RGBA opacity.
 
-### Custom 3D Model Integration (Tung Tung Sahur. Old version!)
+### Custom 3D Model Integration (Tung Tung Sahur. Old version, its was removed!)
 * **Procedural Mesh Loading:** Native parsing and rendering of external `.obj` geometry and texture assets (`.png` / `.jpg`) directly from the local environment.
 * **Velocity-Based Motion Controller:** Dynamic procedural sway, tilt, and vertical bounce algorithms tied to player ground speed and movement states.
 * **Toggle Controls:** Independent runtime toggling via menu controls or keybind (**F7**).
