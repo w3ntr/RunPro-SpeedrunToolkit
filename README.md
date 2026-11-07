@@ -1,8 +1,9 @@
 # Speedrun Toolkit
 
-![MelonLoader](https://img.shields.io/badge/MelonLoader-.NET%206%20%2F%20IL2CPP-green)
+![MelonLoader](https://img.shields.io/badge/MelonLoader-.NET%206%20%2F%20IL2CPP-red)
 ![Unity Version](https://img.shields.io/badge/Unity-2021%2B-blue)
 ![Status](https://img.shields.io/badge/Status-Release-brightgreen)
+![Platform](https://gradgen.bokub.workers.dev/badge/Platform/Windows?gradient=002050,0078D7)
 
 **Speedrun Toolkit** is an advanced, modular software framework designed for route analysis, mechanic practice, physics stabilization, graphic customization, and real-time telemetry display in **Run Pro**. Built on **MelonLoader (.NET 6 / IL2CPP)**, the toolkit provides comprehensive tools ranging from deterministic physics patching to memory-based state manipulation.
 
